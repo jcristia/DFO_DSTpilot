@@ -1,0 +1,9 @@
+# exclude all
+/*
+# except these files/folders
+!.gitignore
+!scripts/
+
+# then exclude specific folder and file types
+
+*.code-workspace
