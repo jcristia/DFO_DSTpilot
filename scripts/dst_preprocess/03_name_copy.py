@@ -48,20 +48,3 @@ for fc in arcpy.ListFeatureClasses():
     if spatref != 'NAD_1983_BC_Environment_Albers':
         print(fc)
 
-
-# # add field (needed in next script) (not anymore)
-# arcpy.env.workspace = os.path.join(root, '03_working/dst_eco.gdb')
-# for fc in arcpy.ListFeatureClasses():
-
-#     # check if it exists already
-#     field_names = [f.name for f in arcpy.ListFields(fc)]
-#     if any(item.startswith('eco') for item in field_names):
-#         continue
-
-#     arcpy.AddField_management(fc, fc, 'DOUBLE')
-
-#     # deal with special cases
-#     if any(item.startswith('GEOMETRY_Area') for item in field_names):
-#         arcpy.CalculateField_management(fc, fc, '!GEOMETRY_Area!')
-#     else:
-#         arcpy.CalculateField_management(fc, fc, '!shape.area!')
