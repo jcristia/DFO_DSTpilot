@@ -99,20 +99,6 @@ for fc in arcpy.ListFeatureClasses(wild_card='crithab*'):
     outname = f'mpatt_eco_{species_type}_{cname}'
     arcpy.Rename_management(fc, outname)
 
-# Old method when clipping to coast:
-# # Delete any features that are just slivers.
-# arcpy.env.workspace = gdb_out
-# for fc in arcpy.ListFeatureClasses(wild_card='eco_areas_crithab*'):
-#     with arcpy.da.UpdateCursor(fc, ['Shape_Area']) as cursor:
-#         for row in cursor:
-#             if row[0] < 300:
-#                 cursor.deleteRow()
-# # Delete any empty fcs
-# for fc in arcpy.ListFeatureClasses(wild_card='eco_areas_crithab*'):
-#     result = arcpy.GetCount_management(fc)
-#     count = int(result.getOutput(0))
-#     if count == 0:
-#         arcpy.Delete_management(fc)
 
 
 
@@ -449,13 +435,9 @@ for fc in arcpy.ListFeatureClasses('temp*'):
 # identified as "high rugosity".
 # https://bcmca.ca/datafiles/individualfiles/bcmca_eco_physical_highrugosity_atlas.pdf
 
-
-# STILL NEED TO CLIP TO GRID AFTER MERGE, BEFORE I TAKE TOP 20%. THIS MIGHT BE
-# ABLE TO TAKE THE PLACE OF SPECIFYING A SUBSET WHEN GOING TO NUMPY.
-# IF I CLIP TO A RECTANGLE, THEN I WILL ALSO NEED TO ASSIGN NODATA VALUES TO
-# AREAS LIKE WCVI AND RIVERS THAT SHOULD NOT BE INCLUDED.
+# There are memory/size constraints when going from raster to numpy.
 # If I end up needing to calculate the percentile over the entire grid, then
-# I will need to break it up into individual raster and bring them into numpy:
+# I will need to break it up into individual rasters and bring them into numpy:
 # https://community.esri.com/t5/python-questions/how-to-calculate-the-percentile-for-each-cell-from/td-p/130653
 # I just need the 80% value, so after that, I can then just apply it to the one
 # study area raster.
