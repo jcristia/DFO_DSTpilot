@@ -4,11 +4,10 @@
 import arcpy
 import pandas as pd
 
-
+# download naming scheme from google sheet before
 csv = r"C:\Users\jcristia\Documents\GIS\DFO\DST_pilot\scripts\dst_preprocess\DSTpilot_spatialData - naming_scheme.csv"
 root = r'C:\Users\jcristia\Documents\GIS\DFO\DST_pilot\spatial'
-# Grid for testing:
-grid = r'C:\Users\jcristia\Documents\GIS\DFO\DST_pilot\spatial\03_working\dst_grid.gdb\dst_grid_TEMPTEST'
+grid = r'C:\Users\jcristia\Documents\GIS\DFO\DST_pilot\spatial\03_working\dst_grid.gdb\dst_grid1km'
 
 names = pd.read_csv(csv)
 
