@@ -7,3 +7,8 @@
 # then exclude specific folder and file types
 
 *.code-workspace
+*.RData
+*.Rhistory
+*.Rproj
+scripts/dst_02_prioritizr/.Rproj.user
+*.rds
