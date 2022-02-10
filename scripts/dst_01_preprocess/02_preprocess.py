@@ -20,7 +20,7 @@ coastline = os.path.join(root, r'03_working\dst_grid.gdb\dst_coastline')
 
 #######################################
 #######################################
-# Critical habitat
+# Critical habitat (ECCC dataset)
 # extract data for marine species
 
 gdbs = os.path.join(dir_in, 'BC_CriticalHabitat_CB_HabitatEssentiel.gdb')
@@ -53,7 +53,11 @@ to_remove = [
     'Leptogium_platynum', 
     'Lupinus_densiflorus',
     'Prophysaon_coeruleum', 
-    'Ranunculus_californicus'
+    'Ranunculus_californicus',
+    'Hypogymnia_heterophylla',
+    'Castilleja_victoriae',
+    'Limnanthes_macounii',
+    'Microseris_bigelovi'
 ]
 
 # Delete features from list
@@ -71,21 +75,13 @@ spec_type = {
     'plants': [
         'Abronia_umbellata',
         'Camissonia_contorta',
-        'Castilleja_victoriae',
-        'Hypogymnia_heterophylla',
-        'Limnanthes_macounii',
-        'Microseris_bigelovi',
         ]
 }
 common_name = { # not all have common names
     'Brachyramphus_marmoratus':'marbledmurrelet',
-    'Anarta_edwardsii': 'anartaedwardsii',
+    'Anarta_edwardsii': 'edwardsbeachmoth',
     'Abronia_umbellata': 'pinksandverbena',
     'Camissonia_contorta': 'plainseveningprimrose',
-    'Castilleja_victoriae': 'victoriesowlclover',
-    'Hypogymnia_heterophylla': 'pikeseasidebone',
-    'Limnanthes_macounii': 'macounsmeadowfoam',
-    'Microseris_bigelovi': 'coastalsilverpuffs'
 }
 
 arcpy.env.workspace = gdb_out
@@ -96,9 +92,26 @@ for fc in arcpy.ListFeatureClasses(wild_card='crithab*'):
             species_type=t
     cname = common_name[species]
     #species = ''.join(species.split('_')).lower()
-    outname = f'mpatt_eco_{species_type}_{cname}'
+    outname = f'eco_{species_type}_{cname}'
     arcpy.Rename_management(fc, outname)
 
+
+
+#######################################
+#######################################
+# Critical habitat (DFO dataset)
+# Extract out killer whale data. It is the only species overlapping with our
+# study area.
+
+gdb = os.path.join(dir_in, 'CriticalHabitat_FGP.gdb')
+arcpy.env.workspace = gdb
+ch = 'DFO_SARA_CritHab_2021_FGP_EN'
+arcpy.MakeFeatureLayer_management(ch, 'temp', """Population_EN = 'Northeast Pacific Southern Resident'""")
+arcpy.CopyFeatures_management('temp', os.path.join(gdb_out, 'eco_mammals_killerwhalesouthres'))
+arcpy.Delete_management('temp')
+arcpy.MakeFeatureLayer_management(ch, 'temp', """Population_EN = 'Northeast Pacific Northern Resident'""")
+arcpy.CopyFeatures_management('temp', os.path.join(gdb_out, 'eco_mammals_killerwhalenorthres'))
+arcpy.Delete_management('temp')
 
 
 
@@ -182,7 +195,7 @@ arcpy.SplitByAttributes_analysis('tmp_substrate_multi', gdb_out, 'SUBSTRATE_upda
 
 # rename
 for fc in ['hard', 'mixed', 'soft']:
-    outname = f'mpatt_eco_coarse_substrate{fc}'
+    outname = f'eco_coarse_substrate{fc}'
     arcpy.CopyFeatures_management(fc, outname)
 
 # delete intermediate polys
@@ -226,7 +239,7 @@ arcpy.env.outputCoordinateSystem = arcpy.SpatialReference(3005)
 arcpy.Buffer_analysis(
     'temp_points',
     'temp_buffer',
-    100
+    1
 )
 
 # clip to grid
@@ -235,7 +248,7 @@ arcpy.Buffer_analysis(
 arcpy.Clip_analysis(
     'temp_buffer',
     grid,
-    'mpatt_eco_fish_herringspawnindex'
+    'eco_fish_herringspawnindex'
 )
 
 # Delete
@@ -251,33 +264,36 @@ for fc in arcpy.ListTables('temp*'):
 # Harbour seal haulouts
 # buffer following BCMCA methodology
 
-csv = os.path.join(root, r'01_original\harbour_seal\Harbour_Seal_Counts_from_Strait_of_Georgia_Haulout_Locations.csv')
-# some points have a positive longitude
-pts = pd.read_csv(csv)
-pts['Longitude'] = pts.Longitude.abs() * -1
-pts.to_csv(os.path.join(root, r'01_original\harbour_seal\edited.csv'))
-csv = os.path.join(root, r'01_original\harbour_seal\edited.csv')
+# NO LONGER USING THIS APPROACH
+# There is now an existing mpatt version that is better.
 
-arcpy.env.workspace = gdb_out
-arcpy.env.outputCoordinateSystem = arcpy.SpatialReference(3005)
-arcpy.XYTableToPoint_management(
-    csv,
-    'temp_points',
-    'Longitude',
-    'Latitude',
-    coordinate_system = 4326
-)
+# csv = os.path.join(root, r'01_original\harbour_seal\Harbour_Seal_Counts_from_Strait_of_Georgia_Haulout_Locations.csv')
+# # some points have a positive longitude
+# pts = pd.read_csv(csv)
+# pts['Longitude'] = pts.Longitude.abs() * -1
+# pts.to_csv(os.path.join(root, r'01_original\harbour_seal\edited.csv'))
+# csv = os.path.join(root, r'01_original\harbour_seal\edited.csv')
 
-os.remove(csv)
+# arcpy.env.workspace = gdb_out
+# arcpy.env.outputCoordinateSystem = arcpy.SpatialReference(3005)
+# arcpy.XYTableToPoint_management(
+#     csv,
+#     'temp_points',
+#     'Longitude',
+#     'Latitude',
+#     coordinate_system = 4326
+# )
 
-arcpy.Buffer_analysis('temp_points', 'temp_buffer', 200)
-arcpy.Dissolve_management(
-    'temp_buffer', 
-    'mpatt_eco_mammals_harboursealhaulout_BCMCA', # this might get merged later
-    multi_part='SINGLE_PART')
+# os.remove(csv)
 
-arcpy.Delete_management('temp_points')
-arcpy.Delete_management('temp_buffer')
+# arcpy.Buffer_analysis('temp_points', 'temp_buffer', 200)
+# arcpy.Dissolve_management(
+#     'temp_buffer', 
+#     'mpatt_eco_mammals_harboursealhaulout_BCMCA', # this might get merged later
+#     multi_part='SINGLE_PART')
+
+# arcpy.Delete_management('temp_points')
+# arcpy.Delete_management('temp_buffer')
 
 
 
@@ -288,48 +304,51 @@ arcpy.Delete_management('temp_buffer')
 # Buffer following BCMCA methodology
 # 200m haulouts, 15km rookeries
 
-csv = os.path.join(root, r'01_original\steller_sealion\Steller_Sea_Lion_Summer_counts_from_Haulout_Locations.csv')
+# NO LONGER USING THIS CODE
+# We now have a newer, already processed, mpatt dataset.
 
-# from metadata:
-# Y: Year-round haulout site
-# W: Winter haulout site
-# A: Breeding rookeries
+# csv = os.path.join(root, r'01_original\steller_sealion\Steller_Sea_Lion_Summer_counts_from_Haulout_Locations.csv')
 
-# other codes in dataset: Null, ?, R, W/Y, Y/A, Y/R, Y/W
-# also, there are some records without coordinates
+# # from metadata:
+# # Y: Year-round haulout site
+# # W: Winter haulout site
+# # A: Breeding rookeries
 
-df = pd.read_csv(csv)
-haul_rook = [['Y', 'W', 'W/Y', 'Y/W'], ['R', 'Y/A', 'Y/R']]
-names = ['haulout_BCMCA', 'rookery'] # haulout might be merged with another dataset
-buffs = [200, 15000]
-arcpy.env.workspace = gdb_out
-arcpy.env.outputCoordinateSystem = arcpy.SpatialReference(3005)
+# # other codes in dataset: Null, ?, R, W/Y, Y/A, Y/R, Y/W
+# # also, there are some records without coordinates
 
-for hr, name, buff in zip(haul_rook, names, buffs):
+# df = pd.read_csv(csv)
+# haul_rook = [['Y', 'W', 'W/Y', 'Y/W'], ['R', 'Y/A', 'Y/R']]
+# names = ['haulout_BCMCA', 'rookery'] # haulout might be merged with another dataset
+# buffs = [200, 15000]
+# arcpy.env.workspace = gdb_out
+# arcpy.env.outputCoordinateSystem = arcpy.SpatialReference(3005)
+
+# for hr, name, buff in zip(haul_rook, names, buffs):
     
-    df_temp = df[df['SITE TYPE'].isin(hr) & ~df.LATITUDE.isnull()]
-    x = np.array(np.rec.fromrecords(df_temp.values))
-    names = df_temp.dtypes.index.tolist()
-    x.dtype.names = tuple(names)
-    arcpy.da.NumPyArrayToTable(x, os.path.join(arcpy.env.workspace, f'temp_table'))
+#     df_temp = df[df['SITE TYPE'].isin(hr) & ~df.LATITUDE.isnull()]
+#     x = np.array(np.rec.fromrecords(df_temp.values))
+#     names = df_temp.dtypes.index.tolist()
+#     x.dtype.names = tuple(names)
+#     arcpy.da.NumPyArrayToTable(x, os.path.join(arcpy.env.workspace, f'temp_table'))
 
-    arcpy.XYTableToPoint_management(
-        'temp_table',
-        'temp_points',
-        'LONGITUDE',
-        'LATITUDE',
-        coordinate_system = 4326
-    )
+#     arcpy.XYTableToPoint_management(
+#         'temp_table',
+#         'temp_points',
+#         'LONGITUDE',
+#         'LATITUDE',
+#         coordinate_system = 4326
+#     )
 
-    arcpy.Buffer_analysis('temp_points', 'temp_buffer', buff)
-    arcpy.Dissolve_management(
-        'temp_buffer', 
-        f'mpatt_eco_mammals_stellersealion{name}', 
-        multi_part='SINGLE_PART')
+#     arcpy.Buffer_analysis('temp_points', 'temp_buffer', buff)
+#     arcpy.Dissolve_management(
+#         'temp_buffer', 
+#         f'mpatt_eco_mammals_stellersealion{name}', 
+#         multi_part='SINGLE_PART')
 
-    arcpy.Delete_management('temp_points')
-    arcpy.Delete_management('temp_table')
-    arcpy.Delete_management('temp_buffer')
+#     arcpy.Delete_management('temp_points')
+#     arcpy.Delete_management('temp_table')
+#     arcpy.Delete_management('temp_buffer')
 
 
 
@@ -338,16 +357,18 @@ for hr, name, buff in zip(haul_rook, names, buffs):
 # Fjords
 # Select from oceanograhic regions dataset
 
-arcpy.env.workspace = gdb_out
-fc = os.path.join(root, r'01_original\DSTpilot_ecologicalData.gdb\mpatt_eco_coarse_oceanographicRegions_data')
-where = "Id = 11"
-arcpy.MakeFeatureLayer_management(
-    fc, 
-    'temp_lyr', 
-    where
-    )
-arcpy.CopyFeatures_management('temp_lyr', 'mpatt_eco_coarse_fjords')
-arcpy.Delete_management('temp_lyr')
+# DOESN'T OVERLAP the study area. No longer needed.
+
+# arcpy.env.workspace = gdb_out
+# fc = os.path.join(root, r'01_original\DSTpilot_ecologicalData.gdb\mpatt_eco_coarse_oceanographicRegions_data')
+# where = "Id = 11"
+# arcpy.MakeFeatureLayer_management(
+#     fc, 
+#     'temp_lyr', 
+#     where
+#     )
+# arcpy.CopyFeatures_management('temp_lyr', 'mpatt_eco_coarse_fjords')
+# arcpy.Delete_management('temp_lyr')
 
 
 
@@ -362,11 +383,12 @@ arcpy.env.workspace = gdb_out
 
 # Arc might crash on these. Just keep rerunning.
 
-arcpy.Buffer_analysis(canopy, 'temp_buff_can', 2, line_end_type='FLAT')
-arcpy.Buffer_analysis(under, 'temp_buff_und', 2, line_end_type='FLAT')
-arcpy.Merge_management(['temp_buff_can', 'temp_buff_und'], 'temp_merge')
-arcpy.Dissolve_management('temp_merge', 'temp_dissolve', multi_part='SINGLE_PART')
-arcpy.Clip_analysis('temp_dissolve', grid, 'mpatt_eco_plants_kelpbiobands')
+arcpy.Buffer_analysis(canopy, 'temp_buff_can', 1, line_end_type='FLAT')
+arcpy.Buffer_analysis(under, 'temp_buff_und', 1, line_end_type='FLAT')
+arcpy.Dissolve_management('temp_buff_can', 'temp_dissolve_can', multi_part='SINGLE_PART')
+arcpy.Dissolve_management('temp_buff_und', 'temp_dissolve_und', multi_part='SINGLE_PART')
+arcpy.Clip_analysis('temp_dissolve_can', grid, 'eco_plants_kelpbiobandscanopy')
+arcpy.Clip_analysis('temp_dissolve_und', grid, 'eco_plants_kelpbiobandsunderstory')
 
 for fc in arcpy.ListFeatureClasses('temp*'):
     arcpy.Delete_management(fc)
@@ -386,7 +408,7 @@ arcpy.RepairGeometry_management('temp_copy')
 arcpy.CheckGeometry_management('temp_copy')
 
 arcpy.PairwiseDissolve_analysis('temp_copy', 'temp_dissolve', multi_part='SINGLE_PART') # crashed if using normal dissolve
-arcpy.PairwiseClip_analysis('temp_dissolve', grid, 'mpatt_eco_plants_eelgrass')
+arcpy.PairwiseClip_analysis('temp_dissolve', grid, 'eco_plants_eelgrass')
 
 for fc in arcpy.ListFeatureClasses('temp*'):
     arcpy.Delete_management(fc)
@@ -400,9 +422,9 @@ arcpy.Delete_management('temp_copy_CheckGeometry')
 
 eg_line = os.path.join(root, r'01_original\DSTpilot_ecologicalData.gdb\bc_ShoreZone_eelgrass_march2020')
 arcpy.env.workspace = gdb_out
-arcpy.Buffer_analysis(eg_line, 'temp_buff', 2, line_end_type='FLAT')
+arcpy.Buffer_analysis(eg_line, 'temp_buff', 1, line_end_type='FLAT')
 arcpy.PairwiseDissolve_analysis('temp_buff', 'temp_dissolve', multi_part='SINGLE_PART')
-arcpy.PairwiseClip_analysis('temp_dissolve', grid, 'mpatt_eco_plants_eelgrassbiobands')
+arcpy.PairwiseClip_analysis('temp_dissolve', grid, 'eco_plants_eelgrassbiobands')
 
 for fc in arcpy.ListFeatureClasses('temp*'):
     arcpy.Delete_management(fc)
@@ -416,9 +438,9 @@ for fc in arcpy.ListFeatureClasses('temp*'):
 sg_line = os.path.join(root, r'01_original\DSTpilot_ecologicalData.gdb\mpatt_eco_plants_surfgrass_biobands_data')
 arcpy.env.workspace = gdb_out
 
-arcpy.Buffer_analysis(sg_line, 'temp_buff', 2, line_end_type='FLAT')
+arcpy.Buffer_analysis(sg_line, 'temp_buff', 1, line_end_type='FLAT')
 arcpy.Dissolve_management('temp_buff', 'temp_dissolve', multi_part='SINGLE_PART')
-arcpy.Clip_analysis('temp_dissolve', grid, 'mpatt_eco_plants_surfgrassbiobands')
+arcpy.Clip_analysis('temp_dissolve', grid, 'eco_plants_surfgrassbiobands')
 
 for fc in arcpy.ListFeatureClasses('temp*'):
     arcpy.Delete_management(fc)
@@ -473,28 +495,68 @@ rast_all = arcpy.Raster('temp_merge')
 outExtractByMask = ExtractByMask(rast_all, grid)
 outExtractByMask.save('temp_clip')
 
+
+# ISSUE: the Salish Sea values all seem to be quite high, so once we combine
+# the top 20% are disproportionaly in the Salish Sea. We can't really identify
+# why, since the methodology to produce the rugosity values is the same, but
+# there is clearly something wrong.
+# However, to move forward, we are going to select the top 20% of values from
+# the Salish Sea, and the top 20% from the remainder of the SSB. This isn't
+# perfect, but oh well.
+# Extract out where the Salish Sea raster overlaps the SSB
+arcpy.env.workspace = rugs
+outrast1 = ExtractByMask(rast1, grid)
+arcpy.env.workspace = gdb_out
+outrast1.save('temp_clip_salishsea')
+arcpy.env.extent = grid
+arcpy.CopyRaster_management('temp_clip_salishsea', 'temp_clip_ss')
+
+# turn full raster to null where it overlaps the salish sea raster
+rast_wcvi = arcpy.Raster('temp_clip')
+rast_sase = arcpy.Raster('temp_clip_ss')
+outisnull = IsNull(rast_sase)
+outsetnull = Con(outisnull, rast_wcvi)
+outsetnull.save('temp_clip_wcvi')
+
+
+# So now calculate the percentile values separately:
+
 # It looks like the only way to properly calculate percentiles is to use numpy. 
-rast_clip = arcpy.Raster('temp_clip')
-arr = arcpy.RasterToNumPyArray(rast_clip)
+rast_clip_ss = arcpy.Raster('temp_clip_ss')
+rast_clip_wcvi = arcpy.Raster('temp_clip_wcvi')
+arr_ss = arcpy.RasterToNumPyArray(rast_clip_ss)
+arr_wcvi = arcpy.RasterToNumPyArray(rast_clip_wcvi)
 # convert 0 values to nan so that they aren't considered (I was trying to do 
 # this with masking before, but the nanpercentile doesn't work properly with
 # that, even though it appears that it does).
-arr_nan = np.where(arr == 0, np.nan, arr)
-n_80 = np.nanpercentile(arr_nan, 80) # this is the 80th percentile value
+arr_nan_ss = np.where(arr_ss == 0, np.nan, arr_ss)
+arr_nan_ss = np.where(arr_nan_ss > 10, np.nan, arr_nan_ss) # also an issue with big values in this one that for some reason don't get recognized as nan values in arcgis
+arr_nan_wcvi = np.where(arr_wcvi == 0, np.nan, arr_wcvi)
+n_80_ss = np.nanpercentile(arr_nan_ss, 80) # this is the 80th percentile value
+n_80_wcvi = np.nanpercentile(arr_nan_wcvi, 80)
 # now, get just the values greater than that
-arr_80 = np.where(arr_nan < n_80, np.nan, arr_nan)
+arr_80_ss = np.where(arr_nan_ss < n_80_ss, np.nan, arr_nan_ss)
+arr_80_wcvi = np.where(arr_nan_wcvi < n_80_wcvi, np.nan, arr_nan_wcvi)
 # convert nan to 0
-arr_out = np.nan_to_num(arr_80)
+arr_out_ss = np.nan_to_num(arr_80_ss)
+arr_out_wcvi = np.nan_to_num(arr_80_wcvi)
 
-outRas = SetNull(rast_clip < n_80, rast_clip)
-outRas.save('temp_80percentile')
-outRas = SetNull(rast_clip < n_80, 1)
-outRas.save('temp_80percentileNoValues')
+outRas_ss = SetNull(rast_clip_ss < n_80_ss, rast_clip_ss)
+outRas_wcvi = SetNull(rast_clip_wcvi < n_80_wcvi, rast_clip_wcvi)
+outRas_ss.save('temp_80percentile_ss')
+outRas_wcvi.save('temp_80percentile_wcvi')
+outRas_ss = SetNull(rast_clip_ss < n_80_ss, 1)
+outRas_wcvi = SetNull(rast_clip_wcvi < n_80_wcvi, 1)
+outRas_ss.save('temp_80percentileNoValues_ss')
+outRas_wcvi.save('temp_80percentileNoValues_wcvi')
+
+rast_all = arcpy.ia.Merge([outRas_ss, outRas_wcvi], 'FIRST')
+rast_all.save('temp_merge_ALL')
 
 # convert to polys
 arcpy.RasterToPolygon_conversion(
-    'temp_80percentileNoValues',
-    'mpatt_eco_coarse_highrugosity',
+    'temp_merge_ALL',
+    'eco_coarse_highrugosity',
     simplify='NO_SIMPLIFY',
 )
 
@@ -522,7 +584,7 @@ arcpy.Buffer_analysis(
 )
 arcpy.Dissolve_management(
     'memory/temp_buff',
-    'mpatt_eco_areas_coldseeps',
+    'eco_areas_coldseeps',
     multi_part='SINGLE_PART'
 )
 arcpy.Delete_management('memory')
@@ -572,7 +634,7 @@ for key in atts:
         'temp_out',
         where_clause=where
     )
-    out_name = f'mpatt_eco_coarse_geomorphicunits_{key}'
+    out_name = f'eco_coarse_geomorphicunits_{key}'
     arcpy.CopyFeatures_management('temp_out', out_name)
     arcpy.Delete_management('temp_out')
 
@@ -598,7 +660,7 @@ for fc in fcs:
         arcpy.Delete_management('memory')
         continue
     bird = fc.split('_')[3]
-    out_name = os.path.join(gdb_out, f'mpatt_eco_birds_{bird}_colonies')
+    out_name = os.path.join(gdb_out, f'eco_birds_{bird}_colonies')
     arcpy.Dissolve_management('memory/clip', out_name, multi_part='SINGLE_PART')
     arcpy.Delete_management('memory')
 
@@ -615,15 +677,6 @@ arcpy.env.workspace = gdb_out
 
 ## Birds ## 
 # not including for now 
-# walk = arcpy.da.Walk(ia_dir, datatype="FeatureClass", type="Polygon")
-# fcs = []
-# for dirpath, dirnames, filenames in walk:
-#     for filename in filenames:
-#         if 'birds' in filename:
-#             fcs.append(os.path.join(dirpath, filename))
-# arcpy.Merge_management(fcs, 'memory/merge')
-# arcpy.Dissolve_management('memory/merge', 'mpatt_eco_birds_birdsimportantareas', multi_part='SINGLE_PART')
-# arcpy.Delete_management('memory')
 
 
 ## Cetaceans ##
@@ -643,12 +696,14 @@ species_set = set(species)
 species = list(species_set)
 
 for spec in species:
+    if spec == 'reskillerwhl':
+        continue # we are getting this one from the critical habitat dataset
     merge_list = []
     for fc in fcs:
         if spec in fc:
             merge_list.append(fc)
     arcpy.Merge_management(merge_list, 'memory/merge')
-    arcpy.Dissolve_management('memory/merge', f'mpatt_eco_cetaceans_{spec}', multi_part='SINGLE_PART')
+    arcpy.Dissolve_management('memory/merge', f'eco_mammals_{spec}', multi_part='SINGLE_PART')
     arcpy.Delete_management('memory')
 
 
@@ -663,38 +718,18 @@ for dirpath, dirnames, filenames in walk:
         if 'coralsponge' in dirpath:
             fcs.append(os.path.join(dirpath, filename))
 arcpy.Merge_management(fcs, 'memory/merge')
-arcpy.Dissolve_management('memory/merge', f'mpatt_eco_inverts_spongecoral', multi_part='SINGLE_PART')
+arcpy.Dissolve_management('memory/merge', f'eco_inverts_spongecoral', multi_part='SINGLE_PART')
 arcpy.Delete_management('memory')
 
 
 ## fish ##
+# changed one name manually (sixgill-ed shark)
 arcpy.env.workspace = os.path.join(ia_dir, 'ia_fish_wcvi.gdb')
+donotinclude = ['deepseaskate', 'alaskaskate', 'deepseasole']
 for fc in arcpy.ListFeatureClasses():
     species = fc.split('_')[-2]
-    arcpy.CopyFeatures_management(fc, os.path.join(gdb_out, f'mpatt_eco_fish_{species}'))
-# archive old way:
-# changed one name manually (sixgill-ed shark)
-# walk = arcpy.da.Walk(ia_dir, datatype="FeatureClass", type="Polygon")
-# fcs = []
-# for dirpath, dirnames, filenames in walk:
-#     for filename in filenames:
-#         if 'fish' in dirpath:
-#             fcs.append(os.path.join(dirpath, filename))
-# species = [] # get unique list
-# for fc in fcs:
-#     species.append(fc.split('_')[-2])
-# species_set = set(species)
-# species = list(species_set)
-# species = sorted(species)
-
-# for spec in species:
-#     merge_list = []
-#     for fc in fcs:
-#         if spec in fc:
-#             merge_list.append(fc)
-#     arcpy.Merge_management(merge_list, 'memory/merge')
-#     arcpy.Dissolve_management('memory/merge', f'mpatt_eco_fish_{spec}', multi_part='SINGLE_PART')
-#     arcpy.Delete_management('memory')
+    if species not in donotinclude:
+        arcpy.CopyFeatures_management(fc, os.path.join(gdb_out, f'eco_fish_{species}'))
 
 
 ## invertebrates ##
@@ -705,74 +740,34 @@ bv_wvi = 'ia_bivalves_wcvi'
 arcpy.MakeFeatureLayer_management(bv_wvi, 'temp', """species = 'Razor Clam'""")
 arcpy.CopyFeatures_management('temp', 'ia_razorclam_wcvi')
 arcpy.Delete_management('temp')
-arcpy.MakeFeatureLayer_management(bv_wvi, 'temp', """species IN ('Olympia oyster', 'Pacific oyster')""")
-arcpy.CopyFeatures_management('temp', 'ia_oyster_wcvi')
+# arcpy.MakeFeatureLayer_management(bv_wvi, 'temp', """species IN ('Olympia oyster', 'Pacific oyster')""")
+# arcpy.CopyFeatures_management('temp', 'ia_oyster_wcvi')
+# arcpy.Delete_management('temp')
+arcpy.MakeFeatureLayer_management(bv_wvi, 'temp', """species = 'Olympia oyster'""")
+arcpy.CopyFeatures_management('temp', 'ia_oysterolympia_wcvi')
+arcpy.Delete_management('temp')
+
+# split out shrimp
+bv_wvi = 'ia_shrimp_wcvi'
+arcpy.MakeFeatureLayer_management(bv_wvi, 'temp', """species IN ('Pandalopsis dispar, Pandalus jordani', 'Pandalus jordani')""")
+arcpy.CopyFeatures_management('temp', 'ia_shrimpsmoothpink_wcvi')
+arcpy.Delete_management('temp')
+arcpy.MakeFeatureLayer_management(bv_wvi, 'temp', """species = 'Pandalopsis dispar, Pandalus jordani'""")
+arcpy.CopyFeatures_management('temp', 'ia_shrimpsidestripe_wcvi')
+arcpy.Delete_management('temp')
+arcpy.MakeFeatureLayer_management(bv_wvi, 'temp', """species = 'Pandalus borealis'""")
+arcpy.CopyFeatures_management('temp', 'ia_shrimpspinypink_wcvi')
 arcpy.Delete_management('temp')
 
 for fc in arcpy.ListFeatureClasses():
     species = fc.split('_')[-2]
-    if species != 'bivalves':
-        arcpy.CopyFeatures_management(fc, os.path.join(gdb_out, f'mpatt_eco_inverts_{species}'))
+    if species != 'bivalves' and species != 'shrimp':
+        arcpy.CopyFeatures_management(fc, os.path.join(gdb_out, f'eco_inverts_{species}'))
 arcpy.Delete_management('ia_razorclam_wcvi')
-arcpy.Delete_management('ia_oyster_wcvi')
-
-# archive old way:
-# split out bivalves first
-# arcpy.env.workspace = os.path.join(ia_dir, 'ia_invertebrates_sog.gdb')
-# bv_sog = 'ia_bivalves_sog'
-# arcpy.MakeFeatureLayer_management(bv_sog, 'temp', """species = 'Butter Clam'""")
-# arcpy.CopyFeatures_management('temp', 'ia_butterclam_sog')
-# arcpy.Delete_management('temp')
-# arcpy.MakeFeatureLayer_management(bv_sog, 'temp', """species = 'Manilla Clam'""")
-# arcpy.CopyFeatures_management('temp', 'ia_manilaclam_sog')
-# arcpy.Delete_management('temp')
-# arcpy.MakeFeatureLayer_management(bv_sog, 'temp', """species = 'Pacific oyster'""")
-# arcpy.CopyFeatures_management('temp', 'ia_oyster_sog')
-# arcpy.Delete_management('temp')
-
-# arcpy.env.workspace = os.path.join(ia_dir, 'ia_invertebrates_wcvi.gdb')
-# bv_wvi = 'ia_bivalves_wcvi'
-# arcpy.MakeFeatureLayer_management(bv_wvi, 'temp', """species = 'Razor Clam'""")
-# arcpy.CopyFeatures_management('temp', 'ia_razorclam_wcvi')
-# arcpy.Delete_management('temp')
-# arcpy.MakeFeatureLayer_management(bv_wvi, 'temp', """species IN ('Olympia oyster', 'Pacific oyster')""")
-# arcpy.CopyFeatures_management('temp', 'ia_oyster_wcvi')
-# arcpy.Delete_management('temp')
-
-# # then go through each one, but remove bivalves from list
-# walk = arcpy.da.Walk(ia_dir, datatype="FeatureClass", type="Polygon")
-# fcs = []
-# for dirpath, dirnames, filenames in walk:
-#     for filename in filenames:
-#         if 'invertebrates' in dirpath:
-#             fcs.append(os.path.join(dirpath, filename))
-# species = [] # get unique list
-# for fc in fcs:
-#     species.append(fc.split('_')[-2])
-# species_set = set(species)
-# species = list(species_set)
-# species = sorted(species)
-# species.remove('bivalves')
-
-# arcpy.env.workspace = gdb_out
-# for spec in species:
-#     merge_list = []
-#     for fc in fcs:
-#         if spec in fc:
-#             merge_list.append(fc)
-#     arcpy.Merge_management(merge_list, 'memory/merge')
-#     arcpy.Dissolve_management('memory/merge', f'eco_inverts_ia_{spec}', multi_part='SINGLE_PART')
-#     arcpy.Delete_management('memory')
-
-# # delete clam/oyster datasets after merge
-# arcpy.env.workspace = os.path.join(ia_dir, 'ia_invertebrates_sog.gdb')
-# arcpy.Delete_management('ia_butterclam_sog')
-# arcpy.Delete_management('ia_manilaclam_sog')
-# arcpy.Delete_management('ia_oyster_sog')
-# arcpy.env.workspace = os.path.join(ia_dir, 'ia_invertebrates_wcvi.gdb')
-# arcpy.Delete_management('ia_razorclam_wcvi')
-# arcpy.Delete_management('ia_oyster_wcvi')
-
+arcpy.Delete_management('ia_oysterolympia_wcvi')
+arcpy.Delete_management('ia_shrimpsmoothpink_wcvi')
+arcpy.Delete_management('ia_shrimpsidestripe_wcvi')
+arcpy.Delete_management('ia_shrimpspinypink_wcvi')
 
 
 ## other vertebrates ##
@@ -797,15 +792,18 @@ for spec in species:
             merge_list.append(fc)
     arcpy.Merge_management(merge_list, 'memory/merge')
     if spec == 'leatherbackseaturtle':
-        outname = f'mpatt_eco_reptiles_{spec}'
+        outname = f'eco_reptiles_{spec}'
     elif spec == 'northernfurseal':
-        outname = f'mpatt_eco_mammals_{spec}'
-    else:
-        outname = f'mpatt_eco_mammals_{spec}_TEMP'  # these will get merged
+        outname = f'eco_mammals_{spec}'
+    elif spec == 'seaotter':
+        outname = f'eco_mammals_{spec}_TEMP' # will get merged
+    # else:
+    #     outname = f'eco_mammals_{spec}_TEMP'  # these will get merged
     print(spec)
     print(outname)
     arcpy.Dissolve_management('memory/merge', outname, multi_part='SINGLE_PART')
     arcpy.Delete_management('memory')
+
 
 
 
@@ -822,28 +820,32 @@ otter_modeled = os.path.join(dir_in, r'DSTpilot_ecologicalData.gdb\mpatt_eco_mam
 otter_ia = 'mpatt_eco_mammals_seaotter_TEMP'
 arcpy.Merge_management([otter_ia, otter_modeled], 'memory/temp_otter_merge')
 arcpy.Dissolve_management('memory/temp_otter_merge', 'memory/temp_otter_diss', multi_part='SINGLE_PART')
-arcpy.MultipartToSinglepart_management('memory/temp_otter_diss', 'mpatt_eco_mammals_seaotter')
+arcpy.MultipartToSinglepart_management('memory/temp_otter_diss', 'eco_mammals_seaotter')
 arcpy.Delete_management('memory')
 arcpy.Delete_management(otter_ia)
 
 # Harbour seal haulouts - merge
-arcpy.env.workspace = gdb_out
-seal_bcmca = 'mpatt_eco_mammals_harboursealhaulout_BCMCA'
-seal_ia = 'mpatt_eco_mammals_harbourseal_TEMP'
-arcpy.Merge_management([seal_bcmca, seal_ia], 'memory/temp_merge')
-arcpy.Dissolve_management('memory/temp_merge', 'memory/temp_diss', multi_part='SINGLE_PART')
-arcpy.MultipartToSinglepart_management('memory/temp_diss', 'mpatt_eco_mammals_harboursealhaulout')
-arcpy.Delete_management('memory')
-arcpy.Delete_management(seal_bcmca)
-arcpy.Delete_management(seal_ia)
+# NO LONGER USING THIS DATASET
+# There is an existing mpatt dataset to use now.
+# arcpy.env.workspace = gdb_out
+# seal_bcmca = 'mpatt_eco_mammals_harboursealhaulout_BCMCA'
+# seal_ia = 'mpatt_eco_mammals_harbourseal_TEMP'
+# arcpy.Merge_management([seal_bcmca, seal_ia], 'memory/temp_merge')
+# arcpy.Dissolve_management('memory/temp_merge', 'memory/temp_diss', multi_part='SINGLE_PART')
+# arcpy.MultipartToSinglepart_management('memory/temp_diss', 'mpatt_eco_mammals_harboursealhaulout')
+# arcpy.Delete_management('memory')
+# arcpy.Delete_management(seal_bcmca)
+# arcpy.Delete_management(seal_ia)
 
 # Steller sea lion haulouts - merge
-arcpy.env.workspace = gdb_out
-stell_bcmca = 'mpatt_eco_mammals_stellersealionhaulout_BCMCA'
-stell_ia = 'mpatt_eco_mammals_stellersealion_TEMP'
-arcpy.Merge_management([stell_bcmca, stell_ia], 'memory/temp_merge')
-arcpy.Dissolve_management('memory/temp_merge', 'memory/temp_diss', multi_part='SINGLE_PART')
-arcpy.MultipartToSinglepart_management('memory/temp_diss', 'mpatt_eco_mammals_stellersealionhaulout')
-arcpy.Delete_management('memory')
-arcpy.Delete_management(stell_bcmca)
-arcpy.Delete_management(stell_ia)
+# NO LONGER USING THIS CODE
+# We now have a newer, already processed, mpatt dataset.
+# arcpy.env.workspace = gdb_out
+# stell_bcmca = 'mpatt_eco_mammals_stellersealionhaulout_BCMCA'
+# stell_ia = 'mpatt_eco_mammals_stellersealion_TEMP'
+# arcpy.Merge_management([stell_bcmca, stell_ia], 'memory/temp_merge')
+# arcpy.Dissolve_management('memory/temp_merge', 'memory/temp_diss', multi_part='SINGLE_PART')
+# arcpy.MultipartToSinglepart_management('memory/temp_diss', 'mpatt_eco_mammals_stellersealionhaulout')
+# arcpy.Delete_management('memory')
+# arcpy.Delete_management(stell_bcmca)
+# arcpy.Delete_management(stell_ia)
