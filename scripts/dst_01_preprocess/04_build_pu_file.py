@@ -1,5 +1,9 @@
 # Calculate area of overlap of each feature with each grid cell
 # This will be the input into Prioritizr
+# Prioritizr does not like big or small numbers. It causes instability when 
+# solving. Therefore, convert everything to a % within each cell. This preserves
+# the most values, otherwise we will be losing a lot of smaller values when we
+# convert to kilometers squared.
 
 import arcpy
 import pandas as pd
@@ -8,17 +12,17 @@ import numpy as np
 root = r'C:\Users\jcristia\Documents\GIS\DFO\DST_pilot\spatial'
 gdb_features = os.path.join(root, '03_working/dst_eco.gdb')
 gdb_grid = os.path.join(root, '03_working/dst_grid.gdb')
-new_grid = 'dst_grid_TEMPTEST_PUVSP'
+new_grid = 'dst_grid1km_PUVSP'
 
 # copy dst_grid_TEMPTEST
 # add uID field and calculate as OBJECTID
-# recalculate AREA and COST fields to be 1000000
+# recalculate AREA and COST fields to be 100
 arcpy.env.workspace = gdb_grid
-arcpy.CopyFeatures_management('dst_grid_TEMPTEST', new_grid)
+arcpy.CopyFeatures_management('dst_grid1km', new_grid)
 arcpy.AddField_management(new_grid, 'uID', 'LONG')
 arcpy.CalculateField_management(new_grid, 'uID', '!OBJECTID!')
-arcpy.CalculateField_management(new_grid, 'AREA', 1000000)
-arcpy.CalculateField_management(new_grid, 'COST', 1000000)
+arcpy.CalculateField_management(new_grid, 'AREA', 100)
+arcpy.CalculateField_management(new_grid, 'COST', 100)
 arcpy.DeleteField_management(new_grid, 'UNIT_ID')
 
 
@@ -41,8 +45,15 @@ for fc in arcpy.ListFeatureClasses():
     cursor = arcpy.da.SearchCursor('temp_table', field_names)
     df = pd.DataFrame(data=[row for row in cursor], columns=field_names)
     df = df.rename(columns={'AREA':fc})
+    df[fc] = df[fc] / 1000000.0 * 100 # convert to %
+    # Deal with small numbers. Round to 5 decimal places.
+    # This means that anything less than this will be 0. However, if you view
+    # the data, they are just extremely small slivers at this scale.
+    df[fc] = df[fc].round(5)
     df_all = df_all.merge(df, how='left', on='uID')
+    df_all[fc] = df_all[fc].fillna(0) # replace nan with 0
     arcpy.Delete_management('temp_table')
+
 
 # join df back to grid
 x = np.array(np.rec.fromrecords(df_all.values))
@@ -56,6 +67,8 @@ arcpy.CopyFeatures_management(jg, f'{new_grid}_joined')
 arcpy.Delete_management('temp_tbl')
 arcpy.DeleteField_management(f'{new_grid}_joined', ['OBJECTID_1', 'UID_1'])
 arcpy.Delete_management(new_grid)
+
+arcpy.Rename_management(f'{new_grid}_joined', new_grid)
 
 
 # Other option: intersect, dissolve, to pandas table, but would require more cleanup.
