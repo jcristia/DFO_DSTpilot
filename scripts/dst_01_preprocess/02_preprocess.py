@@ -785,6 +785,7 @@ species_set = set(species)
 species = list(species_set)
 species = sorted(species)
 
+arcpy.env.workspace = gdb_out
 for spec in species:
     merge_list = []
     for fc in fcs:
@@ -797,15 +798,13 @@ for spec in species:
         outname = f'eco_mammals_{spec}'
     elif spec == 'seaotter':
         outname = f'eco_mammals_{spec}_TEMP' # will get merged
-    # else:
-    #     outname = f'eco_mammals_{spec}_TEMP'  # these will get merged
+    else:
+        arcpy.Delete_management('memory')
+        continue
     print(spec)
     print(outname)
     arcpy.Dissolve_management('memory/merge', outname, multi_part='SINGLE_PART')
     arcpy.Delete_management('memory')
-
-
-
 
 
 
@@ -817,7 +816,7 @@ for spec in species:
 # Otter datasets - merge
 arcpy.env.workspace = gdb_out
 otter_modeled = os.path.join(dir_in, r'DSTpilot_ecologicalData.gdb\mpatt_eco_mammals_seaotter_modeledhabitat_data')
-otter_ia = 'mpatt_eco_mammals_seaotter_TEMP'
+otter_ia = 'eco_mammals_seaotter_TEMP'
 arcpy.Merge_management([otter_ia, otter_modeled], 'memory/temp_otter_merge')
 arcpy.Dissolve_management('memory/temp_otter_merge', 'memory/temp_otter_diss', multi_part='SINGLE_PART')
 arcpy.MultipartToSinglepart_management('memory/temp_otter_diss', 'eco_mammals_seaotter')
@@ -849,3 +848,459 @@ arcpy.Delete_management(otter_ia)
 # arcpy.Delete_management('memory')
 # arcpy.Delete_management(stell_bcmca)
 # arcpy.Delete_management(stell_ia)
+
+
+
+#######################################
+#######################################
+# Salt marsh biobands
+
+sm_line = os.path.join(root, r'01_original\DSTpilot_ecologicalData.gdb\bc_ShoreZone_salt_marsh_march2020')
+arcpy.env.workspace = gdb_out
+
+arcpy.Buffer_analysis(sm_line, 'temp_buff', 1, line_end_type='FLAT')
+arcpy.Dissolve_management('temp_buff', 'temp_dissolve', multi_part='SINGLE_PART')
+arcpy.Clip_analysis('temp_dissolve', grid, 'eco_areas_saltmarshbiobands')
+
+for fc in arcpy.ListFeatureClasses('temp*'):
+    arcpy.Delete_management(fc)
+
+
+
+#######################################
+#######################################
+# Biophysical Units
+# There are a few dataset in this gdb. I'm using Biophysical_Units_L4B. 
+# I look at the documentation, and it looks like this breaks down the 
+# classification a bit more than the L4A dataset. However, I'm not completely 
+# sure. 
+# I separated out the Biophysic attribute into separate feature classes.
+
+biounits = os.path.join(dir_in, 'PMECS_Biophysical_Geomorphic_Units.gdb/Biophysical_Units_L4B')
+arcpy.env.workspace = gdb_out
+
+# view list of unique values
+biophysic = []
+with arcpy.da.SearchCursor(biounits, ['Biophysic']) as cursor:
+    for row in cursor:
+        if row[0] not in biophysic:
+            biophysic.append(row[0])
+
+# I could do this by just changing to lowercase, but I'll keep the dictionary
+# in case we change names again.
+atts = {
+    'trough': 'Trough',
+    'shelf': 'Shelf',
+    'otherbank': 'OtherBank',
+    'dogfishbank': 'DogfishBank',
+    'slope': 'Slope'
+}
+
+for key in atts:
+
+    where = f""""Biophysic" = '{atts[key]}'"""
+    arcpy.MakeFeatureLayer_management(
+        biounits,
+        'temp_out',
+        where_clause=where
+    )
+    out_name = f'eco_coarse_biophysicalunits_{key}'
+    arcpy.CopyFeatures_management('temp_out', out_name)
+    arcpy.Delete_management('temp_out')
+
+
+
+#######################################
+#######################################
+# Upper Ocean Sugregions
+
+osubreg = os.path.join(dir_in, 'bcmca_eco_physical_oceanographicregions_data/PacificCoastUpperOceanSubRegionsApril2013.shp')
+arcpy.env.workspace = gdb_out
+
+# get list of ones that intersect with SSB (just do this manually)
+region_id = [14,16,17,2,21,22,23,24,6]
+
+atts = {
+    'capescotttidalmixing': 14,
+    'vancouverislandshelfbreak': 16,
+    'vancouverislandinnershelf': 17,
+    'coastalmixingregion': 2,
+    'interiorgulfislands': 21,
+    'harostraitandrosariopassage': 22,
+    'juandefucastrait': 23,
+    'juandefucaeddy': 24,
+    'lowflownearshore': 6    
+}
+
+for key in atts:
+
+    where = f""""Id" = {atts[key]}"""
+    arcpy.MakeFeatureLayer_management(
+        osubreg,
+        'temp_out',
+        where_clause=where
+    )
+    out_name = f'eco_coarse_oceansubreg_{key}'
+    arcpy.CopyFeatures_management('temp_out', out_name)
+    arcpy.Delete_management('temp_out')
+    
+
+
+#######################################
+#######################################
+# Benthic habitat classes
+
+bhab = os.path.join(dir_in, 'Benthic_Classes/Habitats_forDST.gdb/benthic_habitats_dissolved')
+arcpy.env.workspace = gdb_out
+
+# view list of unique values
+habitats = []
+with arcpy.da.SearchCursor(bhab, ['Habitat']) as cursor:
+    for row in cursor:
+        if row[0] not in habitats:
+            habitats.append(row[0])
+
+for hab in habitats:
+
+    where = f""""Habitat" = '{hab}'"""
+    arcpy.MakeFeatureLayer_management(
+        bhab,
+        'temp_out',
+        where_clause=where
+    )
+    out_hab = ''.join(hab.split()).lower()
+    out_name = f'eco_coarse_benthichabitat_{out_hab}'
+    arcpy.CopyFeatures_management('temp_out', out_name)
+    arcpy.Delete_management('temp_out')
+
+
+
+
+
+################################################################################
+# Human activity data
+################################################################################
+
+
+
+#######################################
+#######################################
+# Commercial catch data
+# and salmon catch data
+
+catch_com = os.path.join(dir_in, 'CommercialFishing/hu_commercialfishing_gfsh_20211220.gdb/all_fisheries_filtered_gridded')
+arcpy.env.workspace = gdb_out
+
+# clip to grid
+arcpy.Clip_analysis(catch_com, grid, 'temp_clip')
+
+# view list of unique values
+names = []
+with arcpy.da.SearchCursor('temp_clip', ['name_label']) as cursor:
+    for row in cursor:
+        if row[0] not in names:
+            names.append(row[0])
+
+# From Carrie:
+# Bottom Trawl - trawl
+# Geoduck - pressure hose
+# GSU - dive
+# Halibut -hook and line
+# Halibut and Sablefish combo - hook and line
+# Lingcod - hook and line
+# Midwater trawl - trawl
+# Prawn and shrimp by trap - trap
+# Red sea urchin - dive
+# Rockfish -hook and line
+# Sablefish - trap and hook and line
+# Sea Cucumber - dive
+# Shrimp by Trawl - trawl
+
+atts = {
+    'trawl': ['Bottom Trawl', 'Midwater Trawl', 'Shrimp by Trawl'],
+    'pressurehose': ['Geoduck'],
+    'hookandline': ['Halibut', 'Halibut and Sablefish combo', 'Lingcod', 'Rockfish', 'Sablefish'],
+    'dive': ['Green Sea Urchin', 'Red Sea Urchin', 'Sea Cucumber'],
+    'trap': ['Prawn and Shrimp by Trap']
+}
+
+# separate out
+for key in atts:
+
+    if len(atts[key]) > 1:
+        where = f"""name_label IN {tuple(atts[key])}"""
+    else:
+        where = f""""name_label" = '{atts[key][0]}'"""
+    arcpy.MakeFeatureLayer_management(
+        'temp_clip',
+        'temp_out',
+        where_clause=where
+    )
+    out_name = f'temp_{key}'
+    arcpy.CopyFeatures_management('temp_out', out_name)
+    arcpy.Delete_management('temp_out')
+
+# calculate total and dissolve
+for key in atts:
+    in_name = f'temp_{key}'
+    out_name = f'temp_{key}_dissolve'
+    # add field for total_kg
+    # calculate from total_kg or total_kg_filtered
+    arcpy.AddField_management(in_name, 'total_kg_DST', 'FLOAT')
+    with arcpy.da.UpdateCursor(in_name, ['total_kg_unfiltered', 'total_kg_filtered', 'total_kg_DST']) as cursor:
+        for row in cursor:
+            if row[0] > 0:
+                row[2] = row[0]
+            else:
+                row[2] = row[1]
+            cursor.updateRow(row)
+    arcpy.Dissolve_management(in_name, out_name, ['PU_ID'], [['total_kg_DST', 'SUM']], 'SINGLE_PART')
+    arcpy.AlterField_management(out_name, 'SUM_total_kg_DST', 'total_kg_DST', 'total_kg_DST')
+
+
+### Salmon data:
+# combine seine and gill with trawl, and troll with hook and line
+salmon_ds = os.path.join(dir_in, 'CommercialFishing/SLPSA_Salmon_Grid.gdb/SLPSA_1kmGrid_{}')
+gill = salmon_ds.format('Gill')
+seine = salmon_ds.format('Seine')
+troll = salmon_ds.format('Troll')
+
+# merge Gill and Seine
+arcpy.Merge_management([gill, seine], 'temp_salmon_gillseine')
+arcpy.Clip_analysis('temp_salmon_gillseine', grid, 'temp_salmon_gillseine_clip')
+# add field and calculate
+arcpy.AddField_management('temp_salmon_gillseine_clip', 'total_kg_DST', 'FLOAT')
+with arcpy.da.UpdateCursor('temp_salmon_gillseine_clip', ['kg_all', 'total_kg_DST']) as cursor:
+    for row in cursor:
+        row[1] = row[0]
+        cursor.updateRow(row)
+# merge with trawl
+arcpy.Merge_management(['temp_trawl_dissolve', 'temp_salmon_gillseine_clip'], 'temp_trawl_dissolvemerge')
+arcpy.Dissolve_management('temp_trawl_dissolvemerge', 'temp_trawl_dissolvemergedissolve', ['PU_ID'], [['total_kg_DST', 'SUM']], 'SINGLE_PART')
+arcpy.AlterField_management('temp_trawl_dissolvemergedissolve', 'SUM_total_kg_DST', 'total_kg_DST', 'total_kg_DST')
+# delete and rename so naming is consistent
+arcpy.Delete_management('temp_trawl_dissolve')
+arcpy.Delete_management('temp_trawl_dissolvemerge')
+arcpy.Rename_management('temp_trawl_dissolvemergedissolve', 'temp_trawl_dissolve')
+
+# troll: add field and calculate, merge with hook and line, dissolve
+arcpy.Clip_analysis(troll, grid, 'temp_salmon_troll_clip')
+arcpy.AddField_management('temp_salmon_troll_clip', 'total_kg_DST', 'FLOAT')
+with arcpy.da.UpdateCursor('temp_salmon_troll_clip', ['kg_all', 'total_kg_DST']) as cursor:
+    for row in cursor:
+        row[1] = row[0]
+        cursor.updateRow(row)
+arcpy.Merge_management(['temp_hookandline_dissolve', 'temp_salmon_troll_clip'], 'temp_hookandline_merge')
+arcpy.Dissolve_management('temp_hookandline_merge', 'temp_hookandline_mergedissolve', ['PU_ID'], [['total_kg_DST', 'SUM']], 'SINGLE_PART')
+arcpy.AlterField_management('temp_hookandline_mergedissolve', 'SUM_total_kg_DST', 'total_kg_DST', 'total_kg_DST')
+arcpy.Delete_management('temp_hookandline_dissolve')
+arcpy.Rename_management('temp_hookandline_mergedissolve', 'temp_hookandline_dissolve')
+
+# go through gear types again and copy those with suffix _dissolve
+for fc in arcpy.ListFeatureClasses('*_dissolve'):
+    gear = fc.split('_')[1]
+    arcpy.CopyFeatures_management(fc, f'hu_co_fishing_{gear}')
+
+for fc in arcpy.ListFeatureClasses('temp*'):
+    arcpy.Delete_management(fc)
+
+
+
+#######################################
+#######################################
+# Sport fishing
+
+anadromous = os.path.join(dir_in, r'sport_fishing\bcmca_hu_sportfish_anadromous_data\bcmca_hu_sportfish_anadromous_data.shp')
+groundfish = os.path.join(dir_in, r'sport_fishing\bcmca_hu_sportfish_groundfish_data\bcmca_hu_sportfish_groundfish_data.shp')
+crab_trap = os.path.join(dir_in, r'sport_fishing\bcmca_hu_sportfish_crab_data\bcmca_hu_sportfish_crab_data.shp')
+shrimp_trap = os.path.join(dir_in, r'sport_fishing\bcmca_hu_sportfish_prawnandshrimp_data\bcmca_hu_sportfish_prawnandshrimp_data.shp')
+arcpy.env.workspace = gdb_out
+
+# merge
+arcpy.Merge_management([anadromous, groundfish], 'temp_hookandline_merge')
+arcpy.Merge_management([crab_trap, shrimp_trap], 'temp_trap_merge')
+# dissolve
+arcpy.Dissolve_management('temp_hookandline_merge', 'hu_rf_fishing_hookandline', multi_part='SINGLE_PART')
+arcpy.Dissolve_management('temp_trap_merge', 'hu_rf_fishing_trap', multi_part='SINGLE_PART')
+
+for fc in arcpy.ListFeatureClasses('temp*'):
+    arcpy.Delete_management(fc)
+
+
+
+#######################################
+#######################################
+# Floating structures
+
+fs_gdb = os.path.join(dir_in, 'Floating_Structures_PNW/floating_infrastructure.gdb')
+arcpy.env.workspace = fs_gdb
+fcs = arcpy.ListFeatureClasses()
+
+arcpy.Merge_management(fcs, 'memory/merge')
+arcpy.Buffer_analysis('memory/merge', 'memory/buff', 1, dissolve_option='NONE')
+arcpy.env.workspace = gdb_out
+arcpy.Dissolve_management('memory/buff','hu_ot_floatingstructures', multi_part='SINGLE_PART')
+arcpy.Delete_management('memory')
+
+
+
+#######################################
+#######################################
+# Ports and Terminals
+
+ports = os.path.join(dir_in, 'GSR_PORTS_TERMINALS_SVW.gdb/WHSE_IMAGERY_AND_BASE_MAPS_GSR_PORTS_TERMINALS_SVW')
+arcpy.env.workspace = gdb_out
+arcpy.Buffer_analysis(ports, 'memory/buff', 1, dissolve_option='NONE')
+arcpy.Dissolve_management('memory/buff','hu_tr_portsandterminals', multi_part='SINGLE_PART')
+arcpy.Delete_management('memory') 
+
+
+
+#######################################
+#######################################
+# Anchorages
+
+# commercial
+anch_co = os.path.join(dir_in, 'CanadianAnchoragesAndAnchorageAreas/ACHBRT_P.shp')
+arcpy.env.workspace = gdb_out
+arcpy.env.outputCoordinateSystem = arcpy.SpatialReference(3005)
+arcpy.Buffer_analysis(anch_co, 'memory/buff', 1, dissolve_option='NONE')
+arcpy.Dissolve_management('memory/buff','hu_ot_anchoragescommercial', multi_part='SINGLE_PART')
+arcpy.Delete_management('memory') 
+
+# recreational
+anch_re = os.path.join(dir_in, 'CanadianAnchoragesAndAnchorageAreas/ACHARE_P.shp')
+arcpy.env.workspace = gdb_out
+arcpy.env.outputCoordinateSystem = arcpy.SpatialReference(3005)
+arcpy.Buffer_analysis(anch_re, 'memory/buff', 1, dissolve_option='NONE')
+arcpy.Dissolve_management('memory/buff','hu_ot_anchoragesrecreational', multi_part='SINGLE_PART')
+arcpy.Delete_management('memory') 
+
+
+
+#######################################
+#######################################
+# BC cities points
+
+cities = os.path.join(dir_in, r'MajorCities_shp\BC_MAJOR_CITIES_with_poplndata_2011_2019.shp')
+arcpy.env.workspace = gdb_out
+from arcpy.sa import *
+
+# kernel density on population values
+arcpy.env.extent = grid
+outKD = KernelDensity(cities, 'F2019', 1000, 30000, out_cell_values='EXPECTED_COUNTS')
+outKD.save('temp_kd')
+# can't convert to polygon with float values. Workaround:
+outMult = outKD * 100
+outInt = Int(outMult)
+outInt.save('temp_kd_int')
+
+arcpy.RasterToPolygon_conversion('temp_kd_int', 'temp_poly', 'SIMPLIFY', '', 'SINGLE_OUTER_PART')
+arcpy.Clip_analysis('temp_poly', grid, 'temp_poly_clip')
+# add field and calculate from value * 100
+arcpy.AddField_management('temp_poly_clip', 'pop_count_DST', 'FLOAT')
+with arcpy.da.UpdateCursor('temp_poly_clip', ['gridcode', 'pop_count_DST']) as cursor:
+    for row in cursor:
+        if row[0] == 0:
+            cursor.deleteRow() # delete the zero value polygon
+        else:
+            row[1] = row[0]/100.0
+            cursor.updateRow(row)
+
+# assign values to grid
+arcpy.env.qualifiedFieldNames = False
+arcpy.SpatialJoin_analysis(grid, 'temp_poly_clip', 'hu_ot_citypopulation', 
+                           'JOIN_ONE_TO_MANY', 'KEEP_COMMON', 
+                           match_option='HAVE_THEIR_CENTER_IN')
+
+for field in arcpy.ListFields('hu_ot_citypopulation'):
+    if not field.required and field.name != 'pop_count_DST':
+        arcpy.DeleteField_management('hu_ot_citypopulation', field.name)
+
+for fc in arcpy.ListFeatureClasses('temp*'):
+    arcpy.Delete_management(fc)
+for fc in arcpy.ListRasters('temp*'):
+    arcpy.Delete_management(fc)
+
+
+
+#######################################
+#######################################
+# Tenures
+
+tenures = os.path.join(dir_in, r'TANTALIS_Crown_Tenures\TA_CROWN_TENURES_SVW.gdb\WHSE_TANTALIS_TA_CROWN_TENURES_SVW')
+arcpy.env.workspace = gdb_out
+
+# Aquaculture
+where = """TENURE_PURPOSE = 'AQUACULTURE' And TENURE_SUBPURPOSE = 'SHELL FISH'"""
+arcpy.MakeFeatureLayer_management(tenures, 'temp_out', where_clause=where)
+arcpy.CopyFeatures_management('temp_out', 'hu_aq_aquacultureshellfish')
+arcpy.Delete_management('temp_out')
+where = """TENURE_PURPOSE = 'AQUACULTURE' And TENURE_SUBPURPOSE = 'FIN FISH'"""
+arcpy.MakeFeatureLayer_management(tenures, 'temp_out', where_clause=where)
+arcpy.CopyFeatures_management('temp_out', 'hu_aq_aquaculturefinfish')
+arcpy.Delete_management('temp_out')
+
+# Log handling
+where = """TENURE_SUBPURPOSE = 'LOG HANDLING/STORAGE'"""
+arcpy.MakeFeatureLayer_management(tenures, 'temp_out', where_clause=where)
+arcpy.CopyFeatures_management('temp_out', 'hu_ot_loghandlingstorage')
+arcpy.Delete_management('temp_out')
+
+# Agriculture
+# where = """TENURE_PURPOSE = 'AGRICULTURE'"""
+# arcpy.MakeFeatureLayer_management(tenures, 'temp_out', where_clause=where)
+# arcpy.CopyFeatures_management('temp_out', 'hu_ot_agriculture')
+# arcpy.Delete_management('temp_out')
+# DOES NOT OVERLAP WITH SSB PLANNING UNITS
+
+# Industrial
+where = """TENURE_PURPOSE = 'INDUSTRIAL' And TENURE_SUBPURPOSE NOT IN ('LOG HANDLING/STORAGE')"""
+arcpy.MakeFeatureLayer_management(tenures, 'temp_out', where_clause=where)
+arcpy.CopyFeatures_management('temp_out', 'hu_ot_industrial')
+arcpy.Delete_management('temp_out')
+
+# Underwater infrastructure
+where = """TENURE_SUBPURPOSE IN ('ELECTRIC POWER LINE', 'SCIENCE MEASUREMENT/RESEARCH', 'SEWER/EFFLUENT LINE', 'TELECOMMUNICATION LINE', 'WATER LINE')"""
+arcpy.MakeFeatureLayer_management(tenures, 'temp_out', where_clause=where)
+arcpy.CopyFeatures_management('temp_out', 'hu_ot_underwaterinfrastructure')
+arcpy.Delete_management('temp_out')
+
+
+
+#######################################
+#######################################
+# Vessel traffic
+
+# From Lilly (email thread): 
+# Attached is the shp of the number of MMSI per grid cell (MMSI_n).
+# The field All_VCou_3 is the log10(MMSI_n + 1) for all rows >0.
+
+vtraff = os.path.join(dir_in, r'vessel_traffic\MMSI_count_1KmGrid_project.shp')
+arcpy.env.workspace = gdb_out
+
+# create count field, delete rows that are zero
+arcpy.Clip_analysis(vtraff, grid, 'temp_clip')
+arcpy.AddField_management('temp_clip', 'mmsi_n_DST', 'FLOAT')
+with arcpy.da.UpdateCursor('temp_clip', ['All_VCou_3', 'mmsi_n_DST']) as cursor:
+    for row in cursor:
+        if row[0] == 0:
+            cursor.deleteRow() # delete the zero value polygon
+        else:
+            row[1] = row[0]
+            cursor.updateRow(row)
+
+# assign values to grid
+arcpy.env.qualifiedFieldNames = False
+arcpy.SpatialJoin_analysis(grid, 'temp_clip', 'hu_tr_vesseltraffic', 
+                           'JOIN_ONE_TO_MANY', 'KEEP_COMMON', 
+                           match_option='HAVE_THEIR_CENTER_IN')
+
+for field in arcpy.ListFields('hu_tr_vesseltraffic'):
+    if not field.required and field.name != 'mmsi_n_DST':
+        arcpy.DeleteField_management('hu_tr_vesseltraffic', field.name)
+
+for fc in arcpy.ListFeatureClasses('temp*'):
+    arcpy.Delete_management(fc)
+
+
