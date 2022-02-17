@@ -5,7 +5,7 @@ import arcpy
 import pandas as pd
 
 # download naming scheme from google sheet before
-csv = r"C:\Users\jcristia\Documents\GIS\DFO\DST_pilot\scripts\dst_preprocess\DSTpilot_spatialData - naming_scheme.csv"
+csv = r"C:\Users\jcristia\Documents\GIS\DFO\DST_pilot\scripts\dst_01_preprocess\DSTpilot_spatialData - naming_scheme.csv"
 root = r'C:\Users\jcristia\Documents\GIS\DFO\DST_pilot\spatial'
 grid = r'C:\Users\jcristia\Documents\GIS\DFO\DST_pilot\spatial\03_working\dst_grid.gdb\dst_grid1km'
 
@@ -33,7 +33,7 @@ for index, row in names.iterrows():
 
 
 # delete if no features intersected with the grid
-arcpy.env.workspace = os.path.join(root, '03_working/dst_eco.gdb')
+arcpy.env.workspace = os.path.join(root, '03_working/dst_ecohu.gdb')
 for fc in arcpy.ListFeatureClasses():
     count = arcpy.GetCount_management(fc)
     if int(count[0]) == 0:
@@ -42,7 +42,7 @@ for fc in arcpy.ListFeatureClasses():
 
 
 # check that all are in the correct coordinate system:
-arcpy.env.workspace = os.path.join(root, '03_working/dst_eco.gdb')
+arcpy.env.workspace = os.path.join(root, '03_working/dst_ecohu.gdb')
 for fc in arcpy.ListFeatureClasses():
     spatref = arcpy.Describe(fc).spatialReference.name
     if spatref != 'NAD_1983_BC_Environment_Albers':
