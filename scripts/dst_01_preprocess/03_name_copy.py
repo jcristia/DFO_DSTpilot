@@ -24,7 +24,7 @@ for index, row in names.iterrows():
     print(f'Processing {row.processed_file}')
 
     # clip to grid
-    arcpy.Clip_analysis(fc_in, grid, 'memory/clip')
+    arcpy.PairwiseClip_analysis(fc_in, grid, 'memory/clip')
 
     # dissolve
     arcpy.Dissolve_management('memory/clip', fc_out, multi_part='SINGLE_PART')
