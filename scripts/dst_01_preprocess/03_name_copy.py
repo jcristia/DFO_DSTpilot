@@ -26,8 +26,11 @@ for index, row in names.iterrows():
     # clip to grid
     arcpy.PairwiseClip_analysis(fc_in, grid, 'memory/clip')
 
-    # dissolve
-    arcpy.Dissolve_management('memory/clip', fc_out, multi_part='SINGLE_PART')
+    # dissolve area based features
+    if not fc_in.endswith('_d'):
+        arcpy.Dissolve_management('memory/clip', fc_out, multi_part='SINGLE_PART')
+    else:
+        arcpy.CopyFeatures_management('memory/clip', fc_out)
 
     arcpy.Delete_management('memory')
 
