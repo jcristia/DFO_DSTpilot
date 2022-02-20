@@ -10,9 +10,11 @@ import pandas as pd
 import numpy as np
 
 root = r'C:\Users\jcristia\Documents\GIS\DFO\DST_pilot\spatial'
-gdb_features = os.path.join(root, '03_working/dst_eco.gdb')
+gdb_features = os.path.join(root, '03_working/dst_ecohu.gdb')
 gdb_grid = os.path.join(root, '03_working/dst_grid.gdb')
 new_grid = 'dst_grid1km_PUVSP'
+
+
 
 # copy dst_grid_TEMPTEST
 # add uID field and calculate as OBJECTID
@@ -27,11 +29,13 @@ arcpy.DeleteField_management(new_grid, 'UNIT_ID')
 
 
 # use Tabulate Intersection tool to assign area of overlapping feature to each 
-# grid cell.
+# grid cell. This is just for area based features.
 cursor = arcpy.da.SearchCursor(new_grid, ['uID'])
 df_all = pd.DataFrame(data=[row for row in cursor], columns=['uID'])
 arcpy.env.workspace = gdb_features
-for fc in arcpy.ListFeatureClasses():
+fcs = [fc for fc in arcpy.ListFeatureClasses() if not fc.endswith('_d')]
+for fc in fcs:
+
     print(f'Processing {fc}')
 
     arcpy.TabulateIntersection_analysis(
@@ -46,10 +50,46 @@ for fc in arcpy.ListFeatureClasses():
     df = pd.DataFrame(data=[row for row in cursor], columns=field_names)
     df = df.rename(columns={'AREA':fc})
     df[fc] = df[fc] / 1000000.0 * 100 # convert to %
-    # Deal with small numbers. Round to 5 decimal places.
+    # Deal with small numbers. Round to 4 decimal places.
     # This means that anything less than this will be 0. However, if you view
     # the data, they are just extremely small slivers at this scale.
-    df[fc] = df[fc].round(5)
+    df[fc] = df[fc].round(4)
+    df_all = df_all.merge(df, how='left', on='uID')
+    df_all[fc] = df_all[fc].fillna(0) # replace nan with 0
+    arcpy.Delete_management('temp_table')
+
+
+# deal with non-area based features
+for fc in arcpy.ListFeatureClasses('*_d'):
+    print(f'Processing {fc}')
+
+    # assign values to grid
+    arcpy.env.qualifiedFieldNames = False
+    arcpy.SpatialJoin_analysis(
+        os.path.join(gdb_grid, new_grid), 
+        fc, 
+        'temp_table', 
+        'JOIN_ONE_TO_MANY', 
+        'KEEP_COMMON', 
+        match_option='HAVE_THEIR_CENTER_IN'
+        )
+
+    for field in arcpy.ListFields('temp_table'):
+        if field.name.endswith('_DST'):
+            narea_field = field.name
+    for field in arcpy.ListFields('temp_table'):
+        if not field.required and field.name not in ['uID', narea_field]:
+            arcpy.DeleteField_management('temp_table', field.name)
+
+    field_names = ['uID', narea_field]
+    cursor = arcpy.da.SearchCursor('temp_table', field_names)
+    df = pd.DataFrame(data=[row for row in cursor], columns=field_names)
+    df = df.rename(columns={narea_field:fc})
+
+    # for non-area features, scale to a max of 100
+    # divide by max, multiply by 100, round to 4 decimal places
+    df[fc] = df[fc] / df[fc].max() * 100
+    df[fc] = df[fc].round(4)
     df_all = df_all.merge(df, how='left', on='uID')
     df_all[fc] = df_all[fc].fillna(0) # replace nan with 0
     arcpy.Delete_management('temp_table')
