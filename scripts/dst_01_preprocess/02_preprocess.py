@@ -1099,7 +1099,7 @@ arcpy.Rename_management('temp_hookandline_mergedissolve', 'temp_hookandline_diss
 # go through gear types again and copy those with suffix _dissolve
 for fc in arcpy.ListFeatureClasses('*_dissolve'):
     gear = fc.split('_')[1]
-    arcpy.CopyFeatures_management(fc, f'hu_co_fishing_{gear}')
+    arcpy.CopyFeatures_management(fc, f'hu_co_fishing_{gear}_d')
 
 for fc in arcpy.ListFeatureClasses('temp*'):
     arcpy.Delete_management(fc)
@@ -1209,13 +1209,13 @@ with arcpy.da.UpdateCursor('temp_poly_clip', ['gridcode', 'pop_count_DST']) as c
 
 # assign values to grid
 arcpy.env.qualifiedFieldNames = False
-arcpy.SpatialJoin_analysis(grid, 'temp_poly_clip', 'hu_ot_citypopulation', 
+arcpy.SpatialJoin_analysis(grid, 'temp_poly_clip', 'hu_ot_citypopulation_d', 
                            'JOIN_ONE_TO_MANY', 'KEEP_COMMON', 
                            match_option='HAVE_THEIR_CENTER_IN')
 
-for field in arcpy.ListFields('hu_ot_citypopulation'):
+for field in arcpy.ListFields('hu_ot_citypopulation_d'):
     if not field.required and field.name != 'pop_count_DST':
-        arcpy.DeleteField_management('hu_ot_citypopulation', field.name)
+        arcpy.DeleteField_management('hu_ot_citypopulation_d', field.name)
 
 for fc in arcpy.ListFeatureClasses('temp*'):
     arcpy.Delete_management(fc)
@@ -1292,13 +1292,13 @@ with arcpy.da.UpdateCursor('temp_clip', ['All_VCou_3', 'mmsi_n_DST']) as cursor:
 
 # assign values to grid
 arcpy.env.qualifiedFieldNames = False
-arcpy.SpatialJoin_analysis(grid, 'temp_clip', 'hu_tr_vesseltraffic', 
+arcpy.SpatialJoin_analysis(grid, 'temp_clip', 'hu_tr_vesseltraffic_d', 
                            'JOIN_ONE_TO_MANY', 'KEEP_COMMON', 
                            match_option='HAVE_THEIR_CENTER_IN')
 
-for field in arcpy.ListFields('hu_tr_vesseltraffic'):
+for field in arcpy.ListFields('hu_tr_vesseltraffic_d'):
     if not field.required and field.name != 'mmsi_n_DST':
-        arcpy.DeleteField_management('hu_tr_vesseltraffic', field.name)
+        arcpy.DeleteField_management('hu_tr_vesseltraffic_d', field.name)
 
 for fc in arcpy.ListFeatureClasses('temp*'):
     arcpy.Delete_management(fc)
