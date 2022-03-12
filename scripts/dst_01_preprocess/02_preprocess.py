@@ -261,119 +261,6 @@ for fc in arcpy.ListTables('temp*'):
 
 #######################################
 #######################################
-# Harbour seal haulouts
-# buffer following BCMCA methodology
-
-# NO LONGER USING THIS APPROACH
-# There is now an existing mpatt version that is better.
-
-# csv = os.path.join(root, r'01_original\harbour_seal\Harbour_Seal_Counts_from_Strait_of_Georgia_Haulout_Locations.csv')
-# # some points have a positive longitude
-# pts = pd.read_csv(csv)
-# pts['Longitude'] = pts.Longitude.abs() * -1
-# pts.to_csv(os.path.join(root, r'01_original\harbour_seal\edited.csv'))
-# csv = os.path.join(root, r'01_original\harbour_seal\edited.csv')
-
-# arcpy.env.workspace = gdb_out
-# arcpy.env.outputCoordinateSystem = arcpy.SpatialReference(3005)
-# arcpy.XYTableToPoint_management(
-#     csv,
-#     'temp_points',
-#     'Longitude',
-#     'Latitude',
-#     coordinate_system = 4326
-# )
-
-# os.remove(csv)
-
-# arcpy.Buffer_analysis('temp_points', 'temp_buffer', 200)
-# arcpy.Dissolve_management(
-#     'temp_buffer', 
-#     'mpatt_eco_mammals_harboursealhaulout_BCMCA', # this might get merged later
-#     multi_part='SINGLE_PART')
-
-# arcpy.Delete_management('temp_points')
-# arcpy.Delete_management('temp_buffer')
-
-
-
-#######################################
-#######################################
-# Steller sea lion haulouts
-# Rookeries and haulouts into separate datasets
-# Buffer following BCMCA methodology
-# 200m haulouts, 15km rookeries
-
-# NO LONGER USING THIS CODE
-# We now have a newer, already processed, mpatt dataset.
-
-# csv = os.path.join(root, r'01_original\steller_sealion\Steller_Sea_Lion_Summer_counts_from_Haulout_Locations.csv')
-
-# # from metadata:
-# # Y: Year-round haulout site
-# # W: Winter haulout site
-# # A: Breeding rookeries
-
-# # other codes in dataset: Null, ?, R, W/Y, Y/A, Y/R, Y/W
-# # also, there are some records without coordinates
-
-# df = pd.read_csv(csv)
-# haul_rook = [['Y', 'W', 'W/Y', 'Y/W'], ['R', 'Y/A', 'Y/R']]
-# names = ['haulout_BCMCA', 'rookery'] # haulout might be merged with another dataset
-# buffs = [200, 15000]
-# arcpy.env.workspace = gdb_out
-# arcpy.env.outputCoordinateSystem = arcpy.SpatialReference(3005)
-
-# for hr, name, buff in zip(haul_rook, names, buffs):
-    
-#     df_temp = df[df['SITE TYPE'].isin(hr) & ~df.LATITUDE.isnull()]
-#     x = np.array(np.rec.fromrecords(df_temp.values))
-#     names = df_temp.dtypes.index.tolist()
-#     x.dtype.names = tuple(names)
-#     arcpy.da.NumPyArrayToTable(x, os.path.join(arcpy.env.workspace, f'temp_table'))
-
-#     arcpy.XYTableToPoint_management(
-#         'temp_table',
-#         'temp_points',
-#         'LONGITUDE',
-#         'LATITUDE',
-#         coordinate_system = 4326
-#     )
-
-#     arcpy.Buffer_analysis('temp_points', 'temp_buffer', buff)
-#     arcpy.Dissolve_management(
-#         'temp_buffer', 
-#         f'mpatt_eco_mammals_stellersealion{name}', 
-#         multi_part='SINGLE_PART')
-
-#     arcpy.Delete_management('temp_points')
-#     arcpy.Delete_management('temp_table')
-#     arcpy.Delete_management('temp_buffer')
-
-
-
-#######################################
-#######################################
-# Fjords
-# Select from oceanograhic regions dataset
-
-# DOESN'T OVERLAP the study area. No longer needed.
-
-# arcpy.env.workspace = gdb_out
-# fc = os.path.join(root, r'01_original\DSTpilot_ecologicalData.gdb\mpatt_eco_coarse_oceanographicRegions_data')
-# where = "Id = 11"
-# arcpy.MakeFeatureLayer_management(
-#     fc, 
-#     'temp_lyr', 
-#     where
-#     )
-# arcpy.CopyFeatures_management('temp_lyr', 'mpatt_eco_coarse_fjords')
-# arcpy.Delete_management('temp_lyr')
-
-
-
-#######################################
-#######################################
 # Kelp biobands
 # buffer, dissolve, merge, clip
 
@@ -806,13 +693,6 @@ for spec in species:
     arcpy.Dissolve_management('memory/merge', outname, multi_part='SINGLE_PART')
     arcpy.Delete_management('memory')
 
-
-
-#######################################
-#######################################
-# ADDITIONAL PROCESSING to deal with some of the above datasets that are
-# duplicates and need to be merged.
-
 # Otter datasets - merge
 arcpy.env.workspace = gdb_out
 otter_modeled = os.path.join(dir_in, r'DSTpilot_ecologicalData.gdb\mpatt_eco_mammals_seaotter_modeledhabitat_data')
@@ -822,32 +702,6 @@ arcpy.Dissolve_management('memory/temp_otter_merge', 'memory/temp_otter_diss', m
 arcpy.MultipartToSinglepart_management('memory/temp_otter_diss', 'eco_mammals_seaotter')
 arcpy.Delete_management('memory')
 arcpy.Delete_management(otter_ia)
-
-# Harbour seal haulouts - merge
-# NO LONGER USING THIS DATASET
-# There is an existing mpatt dataset to use now.
-# arcpy.env.workspace = gdb_out
-# seal_bcmca = 'mpatt_eco_mammals_harboursealhaulout_BCMCA'
-# seal_ia = 'mpatt_eco_mammals_harbourseal_TEMP'
-# arcpy.Merge_management([seal_bcmca, seal_ia], 'memory/temp_merge')
-# arcpy.Dissolve_management('memory/temp_merge', 'memory/temp_diss', multi_part='SINGLE_PART')
-# arcpy.MultipartToSinglepart_management('memory/temp_diss', 'mpatt_eco_mammals_harboursealhaulout')
-# arcpy.Delete_management('memory')
-# arcpy.Delete_management(seal_bcmca)
-# arcpy.Delete_management(seal_ia)
-
-# Steller sea lion haulouts - merge
-# NO LONGER USING THIS CODE
-# We now have a newer, already processed, mpatt dataset.
-# arcpy.env.workspace = gdb_out
-# stell_bcmca = 'mpatt_eco_mammals_stellersealionhaulout_BCMCA'
-# stell_ia = 'mpatt_eco_mammals_stellersealion_TEMP'
-# arcpy.Merge_management([stell_bcmca, stell_ia], 'memory/temp_merge')
-# arcpy.Dissolve_management('memory/temp_merge', 'memory/temp_diss', multi_part='SINGLE_PART')
-# arcpy.MultipartToSinglepart_management('memory/temp_diss', 'mpatt_eco_mammals_stellersealionhaulout')
-# arcpy.Delete_management('memory')
-# arcpy.Delete_management(stell_bcmca)
-# arcpy.Delete_management(stell_ia)
 
 
 
@@ -1098,29 +952,6 @@ for gear in gears:
 
 #######################################
 #######################################
-# Sport fishing
-# no longer merging these
-
-# anadromous = os.path.join(dir_in, r'sport_fishing\bcmca_hu_sportfish_anadromous_data\bcmca_hu_sportfish_anadromous_data.shp')
-# groundfish = os.path.join(dir_in, r'sport_fishing\bcmca_hu_sportfish_groundfish_data\bcmca_hu_sportfish_groundfish_data.shp')
-# crab_trap = os.path.join(dir_in, r'sport_fishing\bcmca_hu_sportfish_crab_data\bcmca_hu_sportfish_crab_data.shp')
-# shrimp_trap = os.path.join(dir_in, r'sport_fishing\bcmca_hu_sportfish_prawnandshrimp_data\bcmca_hu_sportfish_prawnandshrimp_data.shp')
-# arcpy.env.workspace = gdb_out
-
-# # merge
-# arcpy.Merge_management([anadromous, groundfish], 'temp_hookandline_merge')
-# arcpy.Merge_management([crab_trap, shrimp_trap], 'temp_trap_merge')
-# # dissolve
-# arcpy.Dissolve_management('temp_hookandline_merge', 'hu_rf_fishing_hookandline', multi_part='SINGLE_PART')
-# arcpy.Dissolve_management('temp_trap_merge', 'hu_rf_fishing_trap', multi_part='SINGLE_PART')
-
-# for fc in arcpy.ListFeatureClasses('temp*'):
-#     arcpy.Delete_management(fc)
-
-
-
-#######################################
-#######################################
 # Floating structures
 
 fs_gdb = os.path.join(dir_in, 'Floating_Structures_PNW/floating_infrastructure.gdb')
@@ -1247,10 +1078,6 @@ arcpy.CopyFeatures_management('temp_out', 'hu_ot_loghandlingstorage')
 arcpy.Delete_management('temp_out')
 
 # Agriculture
-# where = """TENURE_PURPOSE = 'AGRICULTURE'"""
-# arcpy.MakeFeatureLayer_management(tenures, 'temp_out', where_clause=where)
-# arcpy.CopyFeatures_management('temp_out', 'hu_ot_agriculture')
-# arcpy.Delete_management('temp_out')
 # DOES NOT OVERLAP WITH SSB PLANNING UNITS
 
 # Industrial
