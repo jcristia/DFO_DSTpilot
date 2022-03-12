@@ -889,16 +889,15 @@ with arcpy.da.SearchCursor(biounits, ['Biophysic']) as cursor:
 # I could do this by just changing to lowercase, but I'll keep the dictionary
 # in case we change names again.
 atts = {
-    'trough': 'Trough',
-    'shelf': 'Shelf',
-    'otherbank': 'OtherBank',
-    'dogfishbank': 'DogfishBank',
-    'slope': 'Slope'
+    'trough': ['Trough',''],
+    'shelf': ['Shelf',''],
+    'otherbank': ['OtherBank', 'DogfishBank'],
+    'slope': ['Slope','']
 }
 
 for key in atts:
 
-    where = f""""Biophysic" = '{atts[key]}'"""
+    where = f"""Biophysic IN {tuple(atts[key])}"""
     arcpy.MakeFeatureLayer_management(
         biounits,
         'temp_out',
@@ -953,25 +952,35 @@ for key in atts:
 bhab = os.path.join(dir_in, 'Benthic_Classes/Habitats_forDST.gdb/benthic_habitats_dissolved')
 arcpy.env.workspace = gdb_out
 
+# clip to ssb
+arcpy.PairwiseClip_analysis(bhab, grid, 'temp_clip')
+
 # view list of unique values
+# create list of unique physical features
 habitats = []
-with arcpy.da.SearchCursor(bhab, ['Habitat']) as cursor:
+physical_features = []
+with arcpy.da.SearchCursor('temp_clip', ['Habitat']) as cursor:
     for row in cursor:
         if row[0] not in habitats:
             habitats.append(row[0])
+        phys_feat = row[0].split(' ')[1]
+        if phys_feat not in physical_features:
+            physical_features.append(phys_feat)
 
-for hab in habitats:
+for phys in physical_features:
 
-    where = f""""Habitat" = '{hab}'"""
+    where = f""""Habitat" LIKE '%{phys}'"""
     arcpy.MakeFeatureLayer_management(
-        bhab,
+        "temp_clip",
         'temp_out',
         where_clause=where
     )
-    out_hab = ''.join(hab.split()).lower()
-    out_name = f'eco_coarse_benthichabitat_{out_hab}'
+    out_phys = phys.lower()
+    out_name = f'eco_coarse_benthichabitat_{out_phys}'
     arcpy.CopyFeatures_management('temp_out', out_name)
     arcpy.Delete_management('temp_out')
+
+arcpy.Delete_management('temp_clip')
 
 
 
@@ -986,7 +995,6 @@ for hab in habitats:
 #######################################
 #######################################
 # Commercial catch data
-# and salmon catch data
 
 catch_com = os.path.join(dir_in, 'CommercialFishing/hu_commercialfishing_gfsh_20211220.gdb/all_fisheries_filtered_gridded')
 arcpy.env.workspace = gdb_out
@@ -1043,7 +1051,7 @@ for key in atts:
 # calculate total and dissolve
 for key in atts:
     in_name = f'temp_{key}'
-    out_name = f'temp_{key}_dissolve'
+    out_name = f'hu_co_fishing_{key}_d'
     # add field for total_kg
     # calculate from total_kg or total_kg_filtered
     arcpy.AddField_management(in_name, 'total_kg_DST', 'FLOAT')
@@ -1057,74 +1065,57 @@ for key in atts:
     arcpy.Dissolve_management(in_name, out_name, ['PU_ID'], [['total_kg_DST', 'SUM']], 'SINGLE_PART')
     arcpy.AlterField_management(out_name, 'SUM_total_kg_DST', 'total_kg_DST', 'total_kg_DST')
 
-
-### Salmon data:
-# combine seine and gill with trawl, and troll with hook and line
-salmon_ds = os.path.join(dir_in, 'CommercialFishing/SLPSA_Salmon_Grid.gdb/SLPSA_1kmGrid_{}')
-gill = salmon_ds.format('Gill')
-seine = salmon_ds.format('Seine')
-troll = salmon_ds.format('Troll')
-
-# merge Gill and Seine
-arcpy.Merge_management([gill, seine], 'temp_salmon_gillseine')
-arcpy.Clip_analysis('temp_salmon_gillseine', grid, 'temp_salmon_gillseine_clip')
-# add field and calculate
-arcpy.AddField_management('temp_salmon_gillseine_clip', 'total_kg_DST', 'FLOAT')
-with arcpy.da.UpdateCursor('temp_salmon_gillseine_clip', ['kg_all', 'total_kg_DST']) as cursor:
-    for row in cursor:
-        row[1] = row[0]
-        cursor.updateRow(row)
-# merge with trawl
-arcpy.Merge_management(['temp_trawl_dissolve', 'temp_salmon_gillseine_clip'], 'temp_trawl_dissolvemerge')
-arcpy.Dissolve_management('temp_trawl_dissolvemerge', 'temp_trawl_dissolvemergedissolve', ['PU_ID'], [['total_kg_DST', 'SUM']], 'SINGLE_PART')
-arcpy.AlterField_management('temp_trawl_dissolvemergedissolve', 'SUM_total_kg_DST', 'total_kg_DST', 'total_kg_DST')
-# delete and rename so naming is consistent
-arcpy.Delete_management('temp_trawl_dissolve')
-arcpy.Delete_management('temp_trawl_dissolvemerge')
-arcpy.Rename_management('temp_trawl_dissolvemergedissolve', 'temp_trawl_dissolve')
-
-# troll: add field and calculate, merge with hook and line, dissolve
-arcpy.Clip_analysis(troll, grid, 'temp_salmon_troll_clip')
-arcpy.AddField_management('temp_salmon_troll_clip', 'total_kg_DST', 'FLOAT')
-with arcpy.da.UpdateCursor('temp_salmon_troll_clip', ['kg_all', 'total_kg_DST']) as cursor:
-    for row in cursor:
-        row[1] = row[0]
-        cursor.updateRow(row)
-arcpy.Merge_management(['temp_hookandline_dissolve', 'temp_salmon_troll_clip'], 'temp_hookandline_merge')
-arcpy.Dissolve_management('temp_hookandline_merge', 'temp_hookandline_mergedissolve', ['PU_ID'], [['total_kg_DST', 'SUM']], 'SINGLE_PART')
-arcpy.AlterField_management('temp_hookandline_mergedissolve', 'SUM_total_kg_DST', 'total_kg_DST', 'total_kg_DST')
-arcpy.Delete_management('temp_hookandline_dissolve')
-arcpy.Rename_management('temp_hookandline_mergedissolve', 'temp_hookandline_dissolve')
-
-# go through gear types again and copy those with suffix _dissolve
-for fc in arcpy.ListFeatureClasses('*_dissolve'):
-    gear = fc.split('_')[1]
-    arcpy.CopyFeatures_management(fc, f'hu_co_fishing_{gear}_d')
-
 for fc in arcpy.ListFeatureClasses('temp*'):
     arcpy.Delete_management(fc)
+
+
+
+#######################################
+#######################################
+# Salmon catch data
+
+salmon_ds = os.path.join(dir_in, 'CommercialFishing/SLPSA_Salmon_Grid.gdb/SLPSA_1kmGrid_{}')
+arcpy.env.workspace = gdb_out
+gears = ['Gill', 'Seine', 'Troll']
+
+for gear in gears:
+
+    ds = salmon_ds.format(gear)
+    arcpy.Clip_analysis(ds, grid, 'temp_clip')
+    outname = f'hu_co_fishing_{gear.lower()}_salmon_d'
+
+    # add field and calculate
+    arcpy.AddField_management('temp_clip', 'total_kg_DST', 'FLOAT')
+    with arcpy.da.UpdateCursor('temp_clip', ['kg_all', 'total_kg_DST']) as cursor:
+        for row in cursor:
+            row[1] = row[0]
+            cursor.updateRow(row)
+    arcpy.Dissolve_management('temp_clip', outname, ['PU_ID'], [['total_kg_DST', 'SUM']], 'SINGLE_PART')
+    arcpy.AlterField_management(outname, 'SUM_total_kg_DST', 'total_kg_DST', 'total_kg_DST')
+    arcpy.Delete_management('temp_clip')
 
 
 
 #######################################
 #######################################
 # Sport fishing
+# no longer merging these
 
-anadromous = os.path.join(dir_in, r'sport_fishing\bcmca_hu_sportfish_anadromous_data\bcmca_hu_sportfish_anadromous_data.shp')
-groundfish = os.path.join(dir_in, r'sport_fishing\bcmca_hu_sportfish_groundfish_data\bcmca_hu_sportfish_groundfish_data.shp')
-crab_trap = os.path.join(dir_in, r'sport_fishing\bcmca_hu_sportfish_crab_data\bcmca_hu_sportfish_crab_data.shp')
-shrimp_trap = os.path.join(dir_in, r'sport_fishing\bcmca_hu_sportfish_prawnandshrimp_data\bcmca_hu_sportfish_prawnandshrimp_data.shp')
-arcpy.env.workspace = gdb_out
+# anadromous = os.path.join(dir_in, r'sport_fishing\bcmca_hu_sportfish_anadromous_data\bcmca_hu_sportfish_anadromous_data.shp')
+# groundfish = os.path.join(dir_in, r'sport_fishing\bcmca_hu_sportfish_groundfish_data\bcmca_hu_sportfish_groundfish_data.shp')
+# crab_trap = os.path.join(dir_in, r'sport_fishing\bcmca_hu_sportfish_crab_data\bcmca_hu_sportfish_crab_data.shp')
+# shrimp_trap = os.path.join(dir_in, r'sport_fishing\bcmca_hu_sportfish_prawnandshrimp_data\bcmca_hu_sportfish_prawnandshrimp_data.shp')
+# arcpy.env.workspace = gdb_out
 
-# merge
-arcpy.Merge_management([anadromous, groundfish], 'temp_hookandline_merge')
-arcpy.Merge_management([crab_trap, shrimp_trap], 'temp_trap_merge')
-# dissolve
-arcpy.Dissolve_management('temp_hookandline_merge', 'hu_rf_fishing_hookandline', multi_part='SINGLE_PART')
-arcpy.Dissolve_management('temp_trap_merge', 'hu_rf_fishing_trap', multi_part='SINGLE_PART')
+# # merge
+# arcpy.Merge_management([anadromous, groundfish], 'temp_hookandline_merge')
+# arcpy.Merge_management([crab_trap, shrimp_trap], 'temp_trap_merge')
+# # dissolve
+# arcpy.Dissolve_management('temp_hookandline_merge', 'hu_rf_fishing_hookandline', multi_part='SINGLE_PART')
+# arcpy.Dissolve_management('temp_trap_merge', 'hu_rf_fishing_trap', multi_part='SINGLE_PART')
 
-for fc in arcpy.ListFeatureClasses('temp*'):
-    arcpy.Delete_management(fc)
+# for fc in arcpy.ListFeatureClasses('temp*'):
+#     arcpy.Delete_management(fc)
 
 
 
@@ -1148,9 +1139,17 @@ arcpy.Delete_management('memory')
 #######################################
 # Ports and Terminals
 
+# some smaller ports are redundant with docks in the floating infrastructure 
+# dataset (see Bamfield). However, some ports are large and floating e.g. (Victoria).
+# Therefore, I will include only those larger ports.
+# We are buffering by 2km to stay consistent with past analyses.
+
 ports = os.path.join(dir_in, 'GSR_PORTS_TERMINALS_SVW.gdb/WHSE_IMAGERY_AND_BASE_MAPS_GSR_PORTS_TERMINALS_SVW')
 arcpy.env.workspace = gdb_out
-arcpy.Buffer_analysis(ports, 'memory/buff', 1, dissolve_option='NONE')
+keep_id = ['241','242','185','188','190','189']
+where = f"""SOURCE_DATA_ID IN {tuple(keep_id)}"""
+arcpy.MakeFeatureLayer_management(ports,'memory/select',where_clause=where)
+arcpy.Buffer_analysis('memory/select', 'memory/buff', 2000, dissolve_option='NONE')
 arcpy.Dissolve_management('memory/buff','hu_tr_portsandterminals', multi_part='SINGLE_PART')
 arcpy.Delete_management('memory') 
 
@@ -1282,7 +1281,7 @@ arcpy.env.workspace = gdb_out
 # create count field, delete rows that are zero
 arcpy.Clip_analysis(vtraff, grid, 'temp_clip')
 arcpy.AddField_management('temp_clip', 'mmsi_n_DST', 'FLOAT')
-with arcpy.da.UpdateCursor('temp_clip', ['All_VCou_3', 'mmsi_n_DST']) as cursor:
+with arcpy.da.UpdateCursor('temp_clip', ['MMSI_n', 'mmsi_n_DST']) as cursor:
     for row in cursor:
         if row[0] == 0:
             cursor.deleteRow() # delete the zero value polygon
