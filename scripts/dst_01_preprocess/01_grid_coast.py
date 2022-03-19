@@ -26,14 +26,23 @@ arcpy.SubdividePolygon_management(
     subdivision_type='STACKED_BLOCKS'
     )
 
-# clip to Southern Shelf Bioregion
-# HOWEVER, the coastline used for bioregions is not as high resolution as the
+# Select grid cells that overlap the Southern Shelf Bioregion
+# Note, the coastline used for bioregions is not as high resolution as the
 # TRIM coastline. If I clip with just this then some PUs will be removed that
-# should not be. Therefore, I need to get a general extent of the SSBR to clip
-# to.
-# I MANUALLY drew this, by just making a general shape that includes all of the
-# coastline and then traced the pelagic outline of the SSBR.
-arcpy.Clip_analysis('dst_grid1km_01divide', ss_bioregion_EXTENT, 'dst_grid1km_02clip')
+# should not be. Therefore, I created a custom general extent of the SSBR to
+# select with.I MANUALLY drew this, by just making a general shape that includes
+# all of the coastline and then traced the pelagic outline of the SSBR.
+# For the selection, I did COMPLETELY_WITHIN. I did not want to create planning
+# units that overlapped the US border. Also, since this project is just an
+# exploration, its more efficient to have fewer planning units.
+# I also didn't want to just CLIP. Then I get varied shapes and sizes of units
+# on the edges.
+spat_select = arcpy.SelectLayerByLocation_management(
+    'dst_grid1km_01divide',
+    'COMPLETELY_WITHIN',
+    ss_bioregion_EXTENT)
+
+arcpy.CopyFeatures_management(spat_select, 'dst_grid1km_02clip')
 
 
 # remove any grid cells that don't overlap with the coastline
