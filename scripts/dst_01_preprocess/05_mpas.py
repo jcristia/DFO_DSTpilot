@@ -78,15 +78,15 @@ arcpy.Dissolve_management('temp_mpas_rcas_marxan_intersect', 'mpas_rcas_marxan',
 arcpy.Delete_management('temp_mpas_rcas_marxan_intersect')
 
 
-
+## NOW DOING THIS IN R ##
 ### Threshold
 # when deciding to lock in a planning unit, perhpas we set a threshold of
 # overlap so that a sliver doesn't cause a whole unit to be locked in.
 # We could do this in R, but do a version of it here since we will need it for
 # Marxan.
-arcpy.MakeFeatureLayer_management(
-    'mpas_rcas_marxan',
-    'temp_lyr',
-    'Shape_Area > 150000'
-)
-arcpy.CopyFeatures_management('temp_lyr', 'mpas_rcas_marxan_threshold150k')
+# arcpy.MakeFeatureLayer_management(
+#     'mpas_rcas_marxan',
+#     'temp_lyr',
+#     'Shape_Area > 150000'
+# )
+# arcpy.CopyFeatures_management('temp_lyr', 'mpas_rcas_marxan_threshold150k')
