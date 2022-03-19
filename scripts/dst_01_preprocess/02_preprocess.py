@@ -15,7 +15,8 @@ gdb_out = os.path.join(root, r'02_processed\dst_processed.gdb')
 grid = os.path.join(root, r'03_working\dst_grid.gdb\dst_grid1km')
 coastline = os.path.join(root, r'03_working\dst_grid.gdb\dst_coastline')
 
-
+#!!!
+arcpy.env.overwriteOutput = True
 
 
 #######################################
