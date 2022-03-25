@@ -138,7 +138,6 @@ evaluate_solution <- function(p1, s1) {
 # no BLM 
 # low targets
 # no locked in
-# 0.1 optimality gap
 ##############################################################
 
 out_folder <- 's01_base'
@@ -154,11 +153,11 @@ p <- problem(pus, features_eco, cost_column='COST') %>%
   add_min_set_objective() %>%
   add_relative_targets(targets_eco$target_low) %>%
   add_binary_decisions() %>%
-  add_gurobi_solver(gap = 0.1, threads = parallel::detectCores(TRUE)-1) %>%
-  add_gap_portfolio(number_solutions = 1, pool_gap = 0.1)
-  #add_cbc_solver(gap=0) %>% # says this is fastest open source solver
-  #add_lpsymphony_solver(gap=0) %>% # however, this performs well and looks cleaner
-  #add_cuts_portfolio(number_solutions = 2) # when not using gurobi
+  add_gurobi_solver(gap = 0, threads = parallel::detectCores(TRUE)-1)
+#add_gap_portfolio(number_solutions = 1, pool_gap = 0)
+#add_cbc_solver(gap=0) %>% # says this is fastest open source solver
+#add_lpsymphony_solver(gap=0) %>% # however, this performs well and looks cleaner
+#add_cuts_portfolio(number_solutions = 2) # when not using gurobi
 s <- solve(p)
 saveRDS(s, glue('{out_folder}.rds'))
 evaluate_solution(p, s)
@@ -185,8 +184,7 @@ p <- problem(pus, features_eco, cost_column='COST') %>%
   add_relative_targets(targets_eco$target_low) %>%
   add_locked_in_constraints('lockedin') %>%
   add_binary_decisions() %>%
-  add_gurobi_solver(gap = 0.1, threads = parallel::detectCores(TRUE)-1) %>%
-  add_gap_portfolio(number_solutions = 1, pool_gap = 0.1)
+  add_gurobi_solver(gap = 0, threads = parallel::detectCores(TRUE)-1)
 s <- solve(p)
 saveRDS(s, glue('{out_folder}.rds'))
 evaluate_solution(p, s)
@@ -230,10 +228,8 @@ p <- problem(pus, z, cost_column=c('COST', 'COST')) %>%
   add_min_set_objective() %>%
   add_relative_targets(tz) %>%
   add_binary_decisions() %>%
-  add_gurobi_solver(gap = 0.1, threads = parallel::detectCores(TRUE)-1) %>%
-  add_gap_portfolio(number_solutions = 1, pool_gap = 0.1)
+  add_gurobi_solver(gap = 0, threads = parallel::detectCores(TRUE)-1, time_limit=1800)
 s <- solve(p)
-saveRDS(s, glue('{out_folder}.rds'))
 evaluate_solution(p, s)
 
 # irreplaceability
@@ -289,10 +285,8 @@ p <- problem(pus, z, cost_column=c('COST', 'COST')) %>%
   add_relative_targets(tz) %>%
   add_manual_locked_constraints(locked_df) %>%
   add_binary_decisions() %>%
-  add_gurobi_solver(gap = 0.1, threads = parallel::detectCores(TRUE)-1) %>%
-  add_gap_portfolio(number_solutions = 1, pool_gap = 0.1)
-s <- solve(p)
-#saveRDS(s, glue('{out_folder}.rds'))
+  add_gurobi_solver(gap = 0, threads = parallel::detectCores(TRUE)-1, time_limit=1800)
+#s <- solve(p)
 #evaluate_solution(p, s)
 
 # can't meet targets with hus set at 70% and MPAs locked in to zone 1.
@@ -307,23 +301,22 @@ s <- solve(p)
 
 # I investigated the hu data overlap with MPAs and dredging is the only one that
 # completely overlaps. Try setting that at 0.
-tz2 <- tz
-tz2['hu_ot_dredgingsites',2] <- 0.0
-p2 <- p %>% add_relative_targets(tz2)
-s2 <- solve(p2, force=TRUE)
+#tz2 <- tz
+#tz2['hu_ot_dredgingsites',2] <- 0.0
+#p2 <- p %>% add_relative_targets(tz2)
+#s2 <- solve(p2, force=TRUE)
 # still no
 
 # Keep decreasing zone 2 targets until I can get it to run.
-tz2[,2] <- ifelse(tz2[,2]>0, 0.52, tz2[,2])
-p3 <- p %>% add_relative_targets(tz2)
-s3 <- solve(p3, force=TRUE)
+#tz2[,2] <- ifelse(tz2[,2]>0, 0.52, tz2[,2])
+#p3 <- p %>% add_relative_targets(tz2)
+#s3 <- solve(p3, force=TRUE)
 # ok, so it will run with dredging set to 0 and all other hu targets at a max of 52%
 
 # Now try the original problem but with add_min_shortfall_objective:
 total_cost <- sum(pus$COST)
 p4 <- p %>% add_min_shortfall_objective(total_cost)
 s4 <- solve(p4, force=TRUE)
-saveRDS(s4, glue('{out_folder}.rds'))
 evaluate_solution(p4, s4)
 # Oh wow, this is super useful!!!
 # First, there's likely a few numerical errors, since a few eco features show
@@ -370,16 +363,14 @@ p <- problem(pus, z, cost_column=c('COST', 'COST', 'COST', 'COST')) %>%
   add_min_set_objective() %>%
   add_relative_targets(tz) %>%
   add_binary_decisions() %>%
-  add_gurobi_solver(gap = 0.1, threads = parallel::detectCores(TRUE)-1) %>%
-  add_gap_portfolio(number_solutions = 1, pool_gap = 0.1)
-s <- solve(p)
+  add_gurobi_solver(gap = 0, threads = parallel::detectCores(TRUE)-1, time_limit=1800)
+#s <- solve(p)
 # nope doesn't work
 # try with min shortfall objective
 
 total_cost <- sum(pus$COST)
 p2 <- p %>% add_min_shortfall_objective(total_cost)
 s2 <- solve(p2, force=TRUE)
-saveRDS(s2, glue('{out_folder}.rds'))
 evaluate_solution(p2, s2)
 # its just vessel traffic and recreation groundfish fishing that can't be met
 
@@ -425,10 +416,8 @@ p <- problem(pus, z, cost_column=c('COST', 'COST', 'COST', 'COST')) %>%
   add_relative_targets(tz) %>%
   add_manual_locked_constraints(locked_df) %>%
   add_binary_decisions() %>%
-  add_gurobi_solver(gap = 0.1, threads = parallel::detectCores(TRUE)-1) %>%
-  add_gap_portfolio(number_solutions = 1, pool_gap = 0.1)
+  add_gurobi_solver(gap = 0, threads = parallel::detectCores(TRUE)-1, time_limit=1800)
 s <- solve(p, force=TRUE)
-saveRDS(s, glue('{out_folder}.rds'))
 evaluate_solution(p, s)
 
 # many more not meeting targets, but most are not significant
@@ -446,7 +435,7 @@ evaluate_solution(p, s)
 
 
 ##############################################################
-# solution 7:
+# solution 7 and 8
 # 
 # Add boundary penalty and find "sweet spot" starting point
 # 
@@ -463,7 +452,7 @@ evaluate_solution(p, s)
 # somewhat in relation to the cost. If there is a penalty of 
 # 1 then the boundaries as is get added in.
 #
-# Since boundary penalty is added the cost, a boundary too small results in
+# Since boundary penalty is added the cost, a penalty too small results in
 # having no effect and a boundary penalty too big results in just one large
 # reserve.
 #
@@ -474,7 +463,7 @@ evaluate_solution(p, s)
 # 
 ##############################################################
 
-out_folder <- 's07_boundary_cohon'
+out_folder <- 's07_boundary_cohon1'
 out_dir <- file.path(out_path, out_folder)
 dir.create(out_dir)
 setwd(out_dir)
@@ -506,7 +495,7 @@ pus_bd <- boundary_matrix(pus)
 # Re-scale boundary length data to match order of magnitude of costs to avoid
 # numerical issues and reduce run times.
 # My costs are all 100.
-pus_bd@x <- rescale(pus_bd@x, to=c(33, 99))
+pus_bd@x <- rescale(pus_bd@x, to=c(33,99))
 
 
 ########## Determining boundary penalty sweet spot
@@ -539,16 +528,16 @@ pus_bd@x <- rescale(pus_bd@x, to=c(33, 99))
 
 
 # generate ideal prioritization based on cost criteria
-total_cost <- sum(pus$COST)
+total_cost <- sum(pus$COST) + 1000
 p_cost <- problem(pus, z, cost_column=c('COST', 'COST', 'COST', 'COST')) %>%
   add_min_shortfall_objective(total_cost) %>%
   add_relative_targets(tz) %>%
   add_manual_locked_constraints(locked_df) %>%
   add_binary_decisions() %>%
-  add_gurobi_solver(gap = 0.1, threads = parallel::detectCores(TRUE)-1) %>%
-  add_gap_portfolio(number_solutions = 1, pool_gap = 0.1)
+  add_gurobi_solver(gap = 0, threads = parallel::detectCores(TRUE)-1, time_limit=21600)
 s_cost <- solve(p_cost, force=TRUE)
 saveRDS(s_cost, glue('{out_folder}_s_cost.rds'))
+plot(s_cost[,'solution_1'])
 
 # Generate ideal prioritization based on spatial fragmentation criteria
 # Set costs to zero so that they aren't considered and boundary to 1 so that it
@@ -561,21 +550,21 @@ pus$COSTZERO <- 0
 # allocated to the same zone together - note that this is the default
 zb <- diag(4)
 
-total_cost <- sum(pus$COST)
+total_cost <- sum(pus$COST) + 1000
 p_costzero <- problem(pus, z, cost_column=c('COSTZERO', 'COSTZERO', 'COSTZERO', 'COSTZERO')) %>%
   add_min_shortfall_objective(total_cost) %>%
   add_relative_targets(tz) %>%
   add_manual_locked_constraints(locked_df) %>%
   add_boundary_penalties(penalty=1, data=pus_bd, zone=zb, edge_factor=c(0.5, 0.5, 0.5, 0.5)) %>%
   add_binary_decisions() %>%
-  add_gurobi_solver(gap = 0.1, threads = parallel::detectCores(TRUE)-1) %>%
-  add_gap_portfolio(number_solutions = 1, pool_gap = 0.1)
+  add_gurobi_solver(gap = 0, threads = parallel::detectCores(TRUE)-1, time_limit=21600)
 s_costzero <- solve(p_costzero, force=TRUE)
 saveRDS(s_costzero, glue('{out_folder}_s_costzero.rds'))
+plot(s_costzero[,'solution_1'])
 
 # generate problem formulation with costs and boundary penalties for
 # calculating performance metrics
-total_cost <- sum(pus$COST)
+total_cost <- sum(pus$COST) + 1000
 p_base <- problem(pus, z, cost_column=c('COST', 'COST', 'COST', 'COST')) %>%
   add_min_shortfall_objective(total_cost) %>%
   add_relative_targets(tz) %>%
@@ -599,7 +588,7 @@ cohon_penalty <- abs(
   (s_cost_metrics$total_cost1 - s_costzero_metrics$total_cost1) /
     (s_cost_metrics$total_boundary_length - s_costzero_metrics$total_boundary_length))
 # round to 5 decimal places to avoid numerical issues during optimization
-cohon_penalty <- round(cohon_penalty, 3)
+cohon_penalty <- round(cohon_penalty, 5)
 saveRDS(cohon_penalty, 'cohon_penalty.rds')
 
 
@@ -608,66 +597,70 @@ saveRDS(cohon_penalty, 'cohon_penalty.rds')
 # Try at least the first 2 to get a sense of how things look.
 
 # Overall penalty value:
-total_cost <- sum(pus$COST)
-p <- problem(pus, z, cost_column=c('COST', 'COST', 'COST', 'COST')) %>%
+total_cost <- sum(pus$COST) + 1000
+p_cohon1 <- problem(pus, z, cost_column=c('COST', 'COST', 'COST', 'COST')) %>%
   add_min_shortfall_objective(total_cost) %>%
   add_relative_targets(tz) %>%
   add_manual_locked_constraints(locked_df) %>%
   add_boundary_penalties(penalty=cohon_penalty[1], data=pus_bd, zone=zb, edge_factor=c(0.5, 0.5, 0.5, 0.5)) %>%
   add_binary_decisions() %>%
-  add_gurobi_solver(gap = 0.1, threads = parallel::detectCores(TRUE)-1) %>%
-  add_gap_portfolio(number_solutions = 1, pool_gap = 0.1)
-s <- solve(p, force=TRUE)
-saveRDS(s, glue('{out_folder}_sweetspot.rds'))
-evaluate_solution(p, s)
-
-# Zone 1 penalty value:
-out_folder <- 's08_boundary_cohon_zone1'
-out_dir <- file.path(out_path, out_folder)
-dir.create(out_dir)
-setwd(out_dir)
-p2 <- p %>% add_boundary_penalties(penalty=cohon_penalty[2], zone=zb, data=pus_bd, edge_factor=c(0.5, 0.5, 0.5, 0.5))
-s2 <- solve(p2, force=TRUE)
-saveRDS(s2, glue('{out_folder}_sweetspot_zone1.rds'))
-evaluate_solution(p2, s2)
-
-##########
-
-#hmmmmm, the above does not look good when viewed as a map
-#try doing min_set and no constraints
-# out_folder <- 's09_boundary_cohon_zone1_minsetnoconst'
-# out_dir <- file.path(out_path, out_folder)
-# dir.create(out_dir)
-# setwd(out_dir)
-# p <- problem(pus, z, cost_column=c('COST', 'COST', 'COST', 'COST')) %>%
-#   add_min_set_objective() %>%
-#   add_relative_targets(tz) %>%
-#   add_boundary_penalties(penalty=cohon_penalty[1], data=pus_bd, zone=zb, edge_factor=c(0.5, 0.5, 0.5, 0.5)) %>%
-#   add_binary_decisions() %>%
-#   add_gurobi_solver(gap = 0.1, threads = parallel::detectCores(TRUE)-1) %>%
-#   add_gap_portfolio(number_solutions = 1, pool_gap = 0.1)
-# s <- solve(p, force=TRUE)
-# saveRDS(s, glue('{out_folder}.rds'))
-# evaluate_solution(p, s)
-
-
-##############################################################
-# solutions n:
-# 
-# Generating solutions around the sweet spot found above.
-# You can feed the previous solution as a starting point.
-##############################################################
-
-# see code in prioritizr calibrating trade-offs vignette for how to do
-# multiple runs with lapply
-
-# Perhaps for the "previous" solution it should first be the sweet spot one
-# I use as a starting point. This is done in the gurobi solver line.
-pres_solu <- readRDS(glue('{out_folder}.rds'))
+  add_gurobi_solver(gap = 0, threads = parallel::detectCores(TRUE)-1, time_limit=21600)
+s_cohon1 <- solve(p_cohon1, force=TRUE)
+saveRDS(s_cohon1, glue('{out_folder}_sweetspot.rds'))
+evaluate_solution(p_cohon1, s_cohon1)
 
 
 
 
+
+
+
+
+
+
+######
+# OLD NOTES TO SORT THROUGH ONCE THE BOUNDARY STUFF IS FIGURED OUT:
+
+# also why is the solution without a penalty more clumped?
+# Well in a way its not. Yes, there are BIGGER clumps, but I think it distributes
+# those cells to other clumps to make them more even throughout.
+# There are a lot of targets to be met, and the features are dispersed, so I bet
+# this is a tough balance.
+# If you look at the documentation examples for add boundary penalty, there are
+# 20 cells selected in each example. So I think it is trying to meet the targets
+# with the same amount of cells while also clumping. In my case, there are
+# probably very few arrangements that allow this to happen.
+
+# Yes, if you compare this one to s01, the cost is higher and it selected more 
+# units, but the boundary is lower. So it did do what it was supposed to.
+
+# The only mystery is why it is so sensitive and why it results in selecting
+# the whole area with a super small increase.
+# Hmmmm, well, selecting the whole area has a way way smaller boundary, so maybe
+# because the solution to meet those targets takes up so much space (if you were
+# to draw a bounding box around that), and to meet those targets, it HAS to be
+# somewhat dispersed, that it then becomes cheaper to just select
+# the whole thing. Remember, the boundary length gets added to the cost of the 
+# selected units. I can see visually that maybe it would be cheaper to select
+# out to the shelf, and then just the individual cells after that, but the 
+# computer may not see that as it gets pushed over a threshold.
+# I think this is just a complicated problem.
+######
+
+
+# After boundary stuff:
+# go forward with 2 kinds of runs:
+# (1) a min shortfall objective problem but no boundary penalty. There's no 
+# point in doing a boundary penalty with this. It is just to show how short we 
+# are.
+# (2) a min set objective, but first reduce targets to just below (or maybe to 
+# the nearest 10) where identified in min shortfall.
+# (2a) one without a boundary penalty
+# (2b) one with a boundary penalty. If I can't figure out a decent boundary
+# penalty with the Cohon method, then just find a solution that differs and
+# looks more clumped than the solution without any boundary penalty. Basically, 
+# I just need to show the team that we can work with it, and that given the 
+# complexity of our problem it might take some time.
 
 
 
@@ -699,21 +692,5 @@ pres_solu <- readRDS(glue('{out_folder}.rds'))
 # s2 <- as_tibble(s2)
 # s2 <- select(s2, -'Shape')
 # write.csv(s2, 'irreplaceability.csv', row.names=FALSE)
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
