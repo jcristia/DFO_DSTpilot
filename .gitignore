@@ -12,3 +12,17 @@
 *.Rproj
 scripts/dst_02_prioritizr/.Rproj.user
 *.rds
+*.pdf
+*.exe
+*.PBSyncDB
+*.zcp
+*.dbf
+*.sbn
+*.sbx
+*.shp
+*.xml
+*.shx
+*.ini
+*.bat
+
+*MarxanWZones_v406/
