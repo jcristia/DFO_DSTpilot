@@ -46,12 +46,6 @@ pus <- left_join(
 pus <- mutate(pus, lockedin = case_when(uID.y > 0 ~ TRUE, is.na(uID.y) ~ FALSE))
 pus <- pus %>% select(-uID.y) %>% rename(uID=uID.x)
 
-# set the cost to zero for pus already covered by MPAs
-# These are already protected and there shouldn't be a cost to select them.
-# ALSO, this is important for properly configuring the boundary penalty.
-pus$COST[pus$lockedin == TRUE] <- 0
-
-
 # create dataframe of locked constraints for zones (different format)
 # must be numeric value in 'status' field
 # MPAs are all in zone 1
@@ -85,8 +79,7 @@ targets <- mutate_at(targets, c('target_low', 'target_med', 'target_hig'), funct
 
 
 ########################################
-# function to evaluate each solution and
-# calculate irreplaceability
+# function to evaluate each solution
 ########################################
 
 evaluate_solution <- function(p1, s1) {
@@ -168,6 +161,12 @@ evaluate_solution(p, s)
 # solution 2:
 # 
 # lockedin mpas
+#
+# For lockedin scenarios, I am not changing the cost of MPA
+# pus to zero. I want to see how much more efficient a solution
+# is when we don't have to lock in mpas.
+
+# However, I do do this for when I add in a boundary penalty.
 ##############################################################
 
 out_folder <- 's02_lockedin'
@@ -468,6 +467,15 @@ out_dir <- file.path(out_path, out_folder)
 dir.create(out_dir)
 setwd(out_dir)
 
+# set the cost to zero for pus already covered by MPAs
+# These are already protected and there shouldn't be a cost to select them.
+# ALSO, this is important for properly configuring the boundary penalty.
+# "This is so that the total cost estimates of the prioritization reflects the 
+# total cost of establishing new protected areas – not just total land value. In
+# other words, we want the total cost estimate for a prioritization to reflect 
+# the cost of implementing conservation actions."
+pus$COST[pus$lockedin == TRUE] <- 0
+
 # zone targets matrix
 zone_names = c('zone1', 'zone2', 'zone3', 'zone4')
 tz <- matrix(NA, nrow=length(features), ncol=4, dimnames=list(features,zone_names))
@@ -494,8 +502,13 @@ pus_bd <- boundary_matrix(pus)
 
 # Re-scale boundary length data to match order of magnitude of costs to avoid
 # numerical issues and reduce run times.
-# My costs are all 100.
-pus_bd@x <- rescale(pus_bd@x, to=c(33,99))
+# My costs are all based on an area of 100. This was scaled down from 1,000,000
+# with edges of 1000. Therefore, consider my edges to be 10.
+pus_bd@x <- rescale(pus_bd@x, to=c(10,30))
+
+# create zone matrix which favors clumping planning units that are
+# allocated to the same zone together - note that this is the default
+zb <- diag(4)
 
 
 ########## Determining boundary penalty sweet spot
@@ -537,7 +550,6 @@ p_cost <- problem(pus, z, cost_column=c('COST', 'COST', 'COST', 'COST')) %>%
   add_gurobi_solver(gap = 0, threads = parallel::detectCores(TRUE)-1, time_limit=21600)
 s_cost <- solve(p_cost, force=TRUE)
 saveRDS(s_cost, glue('{out_folder}_s_cost.rds'))
-plot(s_cost[,'solution_1'])
 
 # Generate ideal prioritization based on spatial fragmentation criteria
 # Set costs to zero so that they aren't considered and boundary to 1 so that it
@@ -545,11 +557,6 @@ plot(s_cost[,'solution_1'])
 
 # create cost column of zeros
 pus$COSTZERO <- 0
-
-# create zone matrix which favors clumping planning units that are
-# allocated to the same zone together - note that this is the default
-zb <- diag(4)
-
 total_cost <- sum(pus$COST) + 1000
 p_costzero <- problem(pus, z, cost_column=c('COSTZERO', 'COSTZERO', 'COSTZERO', 'COSTZERO')) %>%
   add_min_shortfall_objective(total_cost) %>%
@@ -560,7 +567,6 @@ p_costzero <- problem(pus, z, cost_column=c('COSTZERO', 'COSTZERO', 'COSTZERO', 
   add_gurobi_solver(gap = 0, threads = parallel::detectCores(TRUE)-1, time_limit=21600)
 s_costzero <- solve(p_costzero, force=TRUE)
 saveRDS(s_costzero, glue('{out_folder}_s_costzero.rds'))
-plot(s_costzero[,'solution_1'])
 
 # generate problem formulation with costs and boundary penalties for
 # calculating performance metrics
@@ -590,6 +596,7 @@ cohon_penalty <- abs(
 # round to 5 decimal places to avoid numerical issues during optimization
 cohon_penalty <- round(cohon_penalty, 5)
 saveRDS(cohon_penalty, 'cohon_penalty.rds')
+cohon_penalty <- read_rds('cohon_penalty.rds')
 
 
 # generate prioritization using penalty value calculated using Cohon et al. 1979
@@ -609,6 +616,41 @@ s_cohon1 <- solve(p_cohon1, force=TRUE)
 saveRDS(s_cohon1, glue('{out_folder}_sweetspot.rds'))
 evaluate_solution(p_cohon1, s_cohon1)
 
+##################
+# so now lower the boundary until I see some changes
+# it doesn't have to be perfect. Just judge the sensitivity.
+out_folder <- 's08_boundary_cohon2'
+out_dir <- file.path(out_path, out_folder)
+dir.create(out_dir)
+setwd(out_dir)
+total_cost <- sum(pus$COST) + 1000
+p_cohon2 <- problem(pus, z, cost_column=c('COST', 'COST', 'COST', 'COST')) %>%
+  add_min_shortfall_objective(total_cost) %>%
+  add_relative_targets(tz) %>%
+  add_manual_locked_constraints(locked_df) %>%
+  add_boundary_penalties(penalty=(cohon_penalty[1]/100), data=pus_bd, zone=zb, edge_factor=c(0.5, 0.5, 0.5, 0.5)) %>%
+  add_binary_decisions() %>%
+  add_gurobi_solver(gap = 0, threads = parallel::detectCores(TRUE)-1, time_limit=21600)
+s_cohon2 <- solve(p_cohon2, force=TRUE)
+saveRDS(s_cohon2, glue('{out_folder}.rds'))
+evaluate_solution(p_cohon2, s_cohon2)
+# This is a good one to hang out to to show progression.
+
+out_folder <- 's09_boundary_cohon3'
+out_dir <- file.path(out_path, out_folder)
+dir.create(out_dir)
+setwd(out_dir)
+total_cost <- sum(pus$COST) + 1000
+p_cohon3 <- problem(pus, z, cost_column=c('COST', 'COST', 'COST', 'COST')) %>%
+  add_min_shortfall_objective(total_cost) %>%
+  add_relative_targets(tz) %>%
+  add_manual_locked_constraints(locked_df) %>%
+  add_boundary_penalties(penalty=(cohon_penalty[1]/1000), data=pus_bd, zone=zb, edge_factor=c(0.5, 0.5, 0.5, 0.5)) %>%
+  add_binary_decisions() %>%
+  add_gurobi_solver(gap = 0, threads = parallel::detectCores(TRUE)-1, time_limit=21600)
+s_cohon3 <- solve(p_cohon3, force=TRUE)
+saveRDS(s_cohon3, glue('{out_folder}.rds'))
+evaluate_solution(p_cohon3, s_cohon3)
 
 
 
@@ -618,49 +660,8 @@ evaluate_solution(p_cohon1, s_cohon1)
 
 
 
-######
-# OLD NOTES TO SORT THROUGH ONCE THE BOUNDARY STUFF IS FIGURED OUT:
-
-# also why is the solution without a penalty more clumped?
-# Well in a way its not. Yes, there are BIGGER clumps, but I think it distributes
-# those cells to other clumps to make them more even throughout.
-# There are a lot of targets to be met, and the features are dispersed, so I bet
-# this is a tough balance.
-# If you look at the documentation examples for add boundary penalty, there are
-# 20 cells selected in each example. So I think it is trying to meet the targets
-# with the same amount of cells while also clumping. In my case, there are
-# probably very few arrangements that allow this to happen.
-
-# Yes, if you compare this one to s01, the cost is higher and it selected more 
-# units, but the boundary is lower. So it did do what it was supposed to.
-
-# The only mystery is why it is so sensitive and why it results in selecting
-# the whole area with a super small increase.
-# Hmmmm, well, selecting the whole area has a way way smaller boundary, so maybe
-# because the solution to meet those targets takes up so much space (if you were
-# to draw a bounding box around that), and to meet those targets, it HAS to be
-# somewhat dispersed, that it then becomes cheaper to just select
-# the whole thing. Remember, the boundary length gets added to the cost of the 
-# selected units. I can see visually that maybe it would be cheaper to select
-# out to the shelf, and then just the individual cells after that, but the 
-# computer may not see that as it gets pushed over a threshold.
-# I think this is just a complicated problem.
-######
 
 
-# After boundary stuff:
-# go forward with 2 kinds of runs:
-# (1) a min shortfall objective problem but no boundary penalty. There's no 
-# point in doing a boundary penalty with this. It is just to show how short we 
-# are.
-# (2) a min set objective, but first reduce targets to just below (or maybe to 
-# the nearest 10) where identified in min shortfall.
-# (2a) one without a boundary penalty
-# (2b) one with a boundary penalty. If I can't figure out a decent boundary
-# penalty with the Cohon method, then just find a solution that differs and
-# looks more clumped than the solution without any boundary penalty. Basically, 
-# I just need to show the team that we can work with it, and that given the 
-# complexity of our problem it might take some time.
 
 
 
