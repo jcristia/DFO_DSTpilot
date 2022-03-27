@@ -223,29 +223,158 @@ if not 'zonecontrib' in to_not_include:
 # different than I've thought of it in the past.
 # You can probably control it in different ways, but if you keep the within zone
 # clumping set to zero, then there can be different clumps across space for that
-# zone, as opposed to just 1 large cluster. Then if you set the value between
-# zones to something between 0-1 then you create clumping within zones. A
-# negative value would prevent zones from bordering each other.
+# zone, as opposed to just 1 large cluster per zone. Then if you set the value 
+# between zones to something between 0-1 then you create clumping within zones. 
+# A negative value would prevent zones from bordering each other.
+# Another way to think about it:
+# By setting a value greater than zero between different zones, you are saying
+# that you dont want pus of one zone embedded in the cluster of another zone.
 
 if not 'zoneboundcost' in to_not_include:
-    pass
-    # set up a file with all combinations of all zones and set them to 0 to start
+    
+    zbc = {
+    'zoneid1':[1,2,3,4,5,1,1,1,1,2,2,2,3,3,4],
+    'zoneid2':[1,2,3,4,5,2,3,4,5,3,4,5,4,5,5],
+    'cost':   [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
+    }
+    df_zbc = pd.DataFrame.from_dict(zbc)
+    df_zbc.to_csv(os.path.join(root, scenario, 'input/zoneboundcost.dat'), index=False, sep='\t')
+
 
 
 
 #####################################
 # Create boundary length file (bound.dat)
+
+# I am using the code from the ArcMarxan toolbox. I want a standalone script.
+# I don't want to rely on a GUI in Arcmap 10.x.
+# source: https://www.aproposinfosystems.com/en/solutions/arcgis-plugins/arcmarxan-toolbox/
+
 # Lists the boundary costs between 2 planning units. In our case, these will all
 # be 10 since we are using modified pu "areas" of 100.
 
-# This one is a bit more involved.
-# For each pu do a spatial select? Do I list each combination and the opposite?
+# TO CLEAN UP:
+'''
+	- Understand why they give a boundary value to a cell matched to itself for just some cells. (the best practices manual has more on this. 
+		- we add in a self connection because normally when a unit gets selected in a solution, we add up the shared boundaries and subtract it from the total shared boundaries. An effecient soluton is very clumped and therefore a lot of boundary gets subtracted away (it gets added to the total cost, and we are trying to minimize the cost). However, normally a cell on the edge will have 1-3 boundaries that aren't shared with another cell, so there is nothing to subtract away if it gets selected. So then we add self connections to itself to artificaially give it something to subtract away so that it has a chance to get selected. However, we don't want to make it too desirable, so we just give it half the amount.
+		- so therefore, in the bound.dat file, there should be some self connections that are also 1000 and 1500. See if I can find these.
+		- Also, I need to scale these to be 10 or 5.
+		- Also, when thinking of how this works with cost. Imagine selecting a bunch of units where none are connected. The total cost is just the cost of the units. The penalty stuff works by subtracting away from this the shared boundaries. So its not like we start by adding the total possible boundary. Our total cost will still never be more than just the total cost of the units.
+'''
 
-# Check the good practices handbook
-# What to do about those on the border of the study area? Is this where I alter
-# their cost.
-# Why in their example to they include a pu boundary with itself?
-# For each pu do a spatial select? Do I list each combination and the opposite? (e.g. 1-2 and 2-1)
+boundary_layer = puvsp_fc
+pu_field = 'uID'
+boundary_method = 'Measured'
+boundary_treatment = 'Half Value'
+weighting = 0.1
+
+def boundary(boundary_layer):
+
+    #
+    # The approach is straightforward. Marxan must account for outer boundaries therefore
+    # a new layer must be created which has an outer boundary. The natural way to do this is
+    # to dissolve the pu layer, then buffer it and union the result with the original pu layer.
+    # The next step is to set the PUID of the outer buffer to -1 as -1 is not a permitted pu id 
+    # in Marxan. Then the arcpy polygon neighbors analysis runs and gives us a table. When one of 
+    # the puid's equals -1 then that indicates an outer boundary and the id is set to match the 
+    # other id and thus becomes the "self" boundary. The end result is sorted and written to disk.
+    #
+
+    # create temp gdb for workspace
+    arcpy.CreateFileGDB_management(scenario, 'temp.gdb')
+    arcpy.env.workspace = os.path.join(scenario, 'temp.gdb')
+    
+    # buffer and dissolve layer in one step
+    buffFeatClass = "amt_temp_buffer"
+    arcpy.Buffer_analysis(boundary_layer, buffFeatClass, '100 Meters', dissolve_option="ALL")
+    # union buffered layer with the pulayer and delete temp source
+    unionFeatClass = "amt_temp_union"
+    arcpy.Union_analysis([buffFeatClass, boundary_layer], unionFeatClass)
+    arcpy.Delete_management(buffFeatClass)
+    # update planning unit id to equal -1 
+    # based on knowledge that FID_boundary_layer field will be set to -1 or 0 because 
+    # the field didn't exist in the source layer for the boundary layer
+    field_names = [f.name for f in arcpy.ListFields(unionFeatClass)]
+    with arcpy.da.UpdateCursor(unionFeatClass,[field_names[5],pu_field]) as cursor:
+        for row in cursor:
+            if row[0] == -1 or row[0] == 0:
+                row[1] = -1
+                cursor.updateRow(row)
+                break
+
+    # get boundaries and lengths
+    outDBF = os.path.join(scenario,'tempBound.dbf')
+    if boundary_method in ["Weighted","Field"]:
+        arcpy.PolygonNeighbors_analysis(unionFeatClass,outDBF,[pu_field,calc_field_name],both_sides="NO_BOTH_SIDES",out_linear_units="METERS")
+    else:
+        arcpy.PolygonNeighbors_analysis(unionFeatClass,outDBF,[pu_field],both_sides="NO_BOTH_SIDES",out_linear_units="METERS")
+    boundList = []
+    x = 0
+    for row in arcpy.da.SearchCursor(outDBF,'*'):
+        x += 1
+        id1 = int(row[1])
+        id2 = int(row[2])
+        if id1 == -1:
+            id1 = id2
+        if boundary_method in ["Weighted","Field"]:
+            nodes = row[6]
+            sideLen = row[5]
+        else:
+            nodes = row[4]
+            sideLen = row[3]
+        # note: node > 0 means a touching corner, not a touching side
+        if nodes == 0 and sideLen > 0:
+            if boundary_method in ["Weighted","Field"]:
+                if id1 == id2 and int(row[1]) == -1:
+                    # note this is for the perimeter where the buffered calc field value is zero 
+                    # and so the difference method will fail
+                    fValue = row[4]
+                else:
+                    if field_calc_method == 'Mean':
+                        fValue = (row[3]+row[4])/2.0
+                    elif field_calc_method == 'Maximum':
+                        if row[3] > row[4]:
+                            fValue = row[3]
+                        else:
+                            fValue = row[4]
+                    else:
+                        if row[3] < row[4]:
+                            fValue = row[3]
+                        else:
+                            fValue = row[4]
+            if boundary_method == 'Measured':
+                bValue = sideLen
+            elif boundary_method == 'Weighted':
+                bValue = sideLen * fValue
+            elif boundary_method == 'Field':
+                bValue = fValue
+            elif boundary_method == 'Single Value':
+                bValue = boundary_value
+            # deal with boundary units special cases
+            if id1 == id2:
+                if boundary_treatment in ["Full Value","Half Value"]:
+                    if boundary_treatment == "Half Value":
+                        bValue = bValue / 2.0
+                    boundList.append([int(id1),int(id2),bValue])
+            else:
+                boundList.append([int(id1),int(id2),bValue])
+    boundList.sort()
+
+    # convert to bound.dat file
+    oFileName = os.path.join(marxan_input_folder,'bound.dat')
+    oFile = open(oFileName,'w')
+    oFile.write('id1\tid2\tboundary\n')
+    for rec in boundList:
+        oFile.write('%d\t%d\t%f\n' % (rec[0],rec[1],rec[2]))   
+    oFile.close()
+    arcpy.Delete_management(outDBF)
+    arcpy.Delete_management(unionFeatClass)
+
+
+    # delete temp gdb
+    # FUCK ME, BE CAREFUL
+
+    return
 
 if not 'bound' in to_not_include:
     pass
