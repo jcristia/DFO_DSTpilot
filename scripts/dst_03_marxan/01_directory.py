@@ -6,27 +6,26 @@ import arcpy
 
 
 #####################################
-# inputs
+# General inputs
 # see each individual file section for additional inputs to potentially change
 name = 'scenario_001'
-BLM = 1 #set to 1 or 0. BLM is set in zoneboundcost
 to_not_include = [ # optional files to not include in input.dat
     'puzone', # no set up for this yet
-    'zonetarget', # no set up for this yet
     'zonetarget2', # no set up for this yet
+    'zonecontrib', # no set up for this yet
     'zonecontrib2', # no set up for this yet
     ]
 
-# For our scenarios we are only using: PULOCK, BOUND, ZONECONTRIB, ZONEBOUNDCOST  
+# For our scenarios we are only using: PULOCK, BOUND, ZONETARGET, ZONEBOUNDCOST  
 # OPTIONAL FILES:
 # see the manual starting on page 5-58 for descriptions
 # 'bound' # needed if BLM is set to 1
 # 'pulock', # for locking in pus to just 1 zone each (can be different zones)
 # 'puzone', # for locking in pus to multiple zones (i.e. can be assigned to one zone or another). Do not use if pulock is being used.
-# 'zonetarget', # only use if overall targets are not set in feat.dat
+# 'zonetarget', # set targets by zone
 # 'zonetarget2', # simplified alternative to zonetarget
 # 'zoneboundcost', # Controls the BLM within a zone and also to prevent/enable certain zones to border each other
-# 'zonecontrib', # sets up targets by zones as proportion of the overall target in feat.dat
+# 'zonecontrib', # sets up proportion that a pu in a zone can contribute to meeting targets (not related to target values though)
 # 'zonecontrib2' # Simplified version of zonecontrib.
 
 # paths
@@ -38,8 +37,9 @@ mpas = os.path.join(root, r'spatial\03_working\dst_mpas.gdb\mpas_rcas_marxan')
 zoning = os.path.join(root, r'scripts\dst_02_prioritizr\Zoning frameworks - zones_features.csv')
 scenario = os.path.join(root, 'scripts/dst_03_marxan', name)
 
+
 #####################################
-# create directory and input.dat file
+# create directory
 if not os.path.isdir(scenario):
     os.mkdir(scenario)
     os.mkdir(os.path.join(root, scenario, 'input'))
@@ -48,11 +48,19 @@ if not os.path.isdir(scenario):
 # copy in executable and input.dat file
 executable = os.path.join(marxan_exe, 'MarZone_x64.exe')
 shutil.copy2(executable, scenario)
+
+
+#####################################
+# copy in and configure input.dat file
+# I'm only controling the BLM value here. For any other values, just edit it
+# manually.
+
+BLM = 1 #set to 1 or 0. Actual BLM is set in zoneboundcost if this is 1.
+
 inputdat_orig = os.path.join(marxan_exe, 'input_TEMPLATE.dat')
 inputdat = os.path.join(root, scenario, 'input_TEMPLATE.dat')
 shutil.copy(inputdat_orig, inputdat)
 
-# configure input.dat
 new_input = os.path.join(root, scenario, 'input.dat')
 with open(inputdat) as oldfile, open(new_input, 'w') as newfile:
     for line in oldfile:
@@ -174,15 +182,11 @@ if not 'pulock' in to_not_include:
 
 
 #####################################
-# Create zone contribution file (zonecontrib.dat)
-# This works with the feature targets in feat.dat. It assigns a feature to a
-# a zone and the fraction of the target that can be met in that zone.
-# For a species, the fraction can add up to greater than 1. This allows a target
-# to be met in one zone OR another, or a combination of them.
-# However, in our case, a feature is only assigned to one zone and therefore we
-# will only list a feature once and its fraction will be 1.
+# Create zone targets file (zonetarget.dat)
+# This is set up assuming that feature targets are all met in only one zone. If
+# that ever changes then we will need to update this.
 
-if not 'zonecontrib' in to_not_include:
+if not 'zonetarget' in to_not_include:
 
     # zoning csv
     zone_column = 'zone_20220315_4zones'
@@ -192,7 +196,7 @@ if not 'zonecontrib' in to_not_include:
     # marxan zone ids
     zoneids = pd.read_csv(os.path.join(root, scenario, 'input/zones.dat'), sep='\t')
 
-    df_all = pd.DataFrame(columns=['zoneid', 'specid', 'fraction'])
+    df_all = pd.DataFrame(columns=['zoneid', 'featureid', 'target', 'targettype'])
     for z in zoneids.zoneid[1:]: # we skip the first 'available' Marxan zone
         
         # the original zone id in the zones cvs
@@ -201,17 +205,21 @@ if not 'zonecontrib' in to_not_include:
         # the feature names in each zone
         fzones = zones.feature[zones[zone_column]==z_original]
 
-        # with those names, get the feature ids
+        # with those names, get the feature ids and targets
         fids = features[features.name.isin(fzones)]
-        fids = fids[['id']]
-        fids = fids.rename(columns={'id':'specid'})
+        fids = fids[['id', 'prop']]
+        fids = fids.rename(columns={'id':'featureid', 'prop':'target'})
 
         fids['zoneid'] = z # marxan zone id
-        fids['fraction'] = 1 # all features should be represented in only 1 zone
-        fids = fids[['zoneid', 'specid', 'fraction']]
+        fids['targettype'] = 1
+        fids = fids[['zoneid', 'featureid', 'target', 'targettype']]
         df_all = df_all.append(fids)
 
-    df_all.to_csv(os.path.join(root, scenario, 'input/zonecontrib.dat'), index=False, sep='\t')
+    # This file for some reason has to be sorted from lowest to highest value, first
+    # by zoneid, then by featureid, and then by target.
+    df_all = df_all.sort_values(by=['zoneid', 'featureid'])
+
+    df_all.to_csv(os.path.join(root, scenario, 'input/zonetarget.dat'), index=False, sep='\t')
 
 
 #####################################
@@ -246,29 +254,31 @@ if not 'zoneboundcost' in to_not_include:
 #####################################
 # Create boundary length file (bound.dat)
 
-# I am using the code from the ArcMarxan toolbox. I want a standalone script.
-# I don't want to rely on a GUI in Arcmap 10.x.
+# This file lists the boundary costs between 2 planning units. In our case, 
+# these will all be 10 since we are using modified pu "areas" of 100.
+
+# I am modifying the code from the ArcMarxan toolbox. I want a standalone 
+# script. I don't want to rely on a GUI in Arcmap 10.x.
 # source: https://www.aproposinfosystems.com/en/solutions/arcgis-plugins/arcmarxan-toolbox/
 
-# Lists the boundary costs between 2 planning units. In our case, these will all
-# be 10 since we are using modified pu "areas" of 100.
+# In general, when thinking about boundary "costs":
+# Imagine selecting a bunch of units where none are connected. The total cost is
+# just the cost of the units. I think the boundary penalty stuff works by 
+# subtracting away from this the shared boundaries so that it rewards solutions
+# that are more clustered. Therefore, our total cost will still never be more 
+# than just the total cost of the units.
 
-# TO CLEAN UP:
-'''
-	- Understand why they give a boundary value to a cell matched to itself for just some cells. (the best practices manual has more on this. 
-		- we add in a self connection because normally when a unit gets selected in a solution, we add up the shared boundaries and subtract it from the total shared boundaries. An effecient soluton is very clumped and therefore a lot of boundary gets subtracted away (it gets added to the total cost, and we are trying to minimize the cost). However, normally a cell on the edge will have 1-3 boundaries that aren't shared with another cell, so there is nothing to subtract away if it gets selected. So then we add self connections to itself to artificaially give it something to subtract away so that it has a chance to get selected. However, we don't want to make it too desirable, so we just give it half the amount.
-		- so therefore, in the bound.dat file, there should be some self connections that are also 1000 and 1500. See if I can find these.
-		- Also, I need to scale these to be 10 or 5.
-		- Also, when thinking of how this works with cost. Imagine selecting a bunch of units where none are connected. The total cost is just the cost of the units. The penalty stuff works by subtracting away from this the shared boundaries. So its not like we start by adding the total possible boundary. Our total cost will still never be more than just the total cost of the units.
-'''
+# Why do we give a shared boundary value to a cell matched to itself?
+# (I think...) an effecient solution is very clumped and therefore a lot of
+# boundary gets subtracted away to lower the total cost. However, normally a 
+# cell on the edge will have 1-3 boundaries that aren't shared with another 
+# cell, so there is nothing to subtract away if it gets selected. So, we add 
+# self connections to itself to artificaially give it something to subtract away
+# so that it has a chance to get selected in a solution that is prioritizing a
+# minimized boundary. However, we don't want to make it too desirable, so we 
+# give it just half the amount(??).
 
-boundary_layer = puvsp_fc
-pu_field = 'uID'
-boundary_method = 'Measured'
-boundary_treatment = 'Half Value'
-weighting = 0.1
-
-def boundary(boundary_layer):
+def boundary(boundary_layer, pu_field, boundary_treatment, weighting):
 
     #
     # The approach is straightforward. Marxan must account for outer boundaries therefore
@@ -282,13 +292,13 @@ def boundary(boundary_layer):
 
     # create temp gdb for workspace
     arcpy.CreateFileGDB_management(scenario, 'temp.gdb')
-    arcpy.env.workspace = os.path.join(scenario, 'temp.gdb')
+    temp_gdb = os.path.join(scenario, 'temp.gdb')
     
     # buffer and dissolve layer in one step
-    buffFeatClass = "amt_temp_buffer"
+    buffFeatClass = os.path.join(temp_gdb, "amt_temp_buffer")
     arcpy.Buffer_analysis(boundary_layer, buffFeatClass, '100 Meters', dissolve_option="ALL")
     # union buffered layer with the pulayer and delete temp source
-    unionFeatClass = "amt_temp_union"
+    unionFeatClass = os.path.join(temp_gdb, "amt_temp_union")
     arcpy.Union_analysis([buffFeatClass, boundary_layer], unionFeatClass)
     arcpy.Delete_management(buffFeatClass)
     # update planning unit id to equal -1 
@@ -304,10 +314,7 @@ def boundary(boundary_layer):
 
     # get boundaries and lengths
     outDBF = os.path.join(scenario,'tempBound.dbf')
-    if boundary_method in ["Weighted","Field"]:
-        arcpy.PolygonNeighbors_analysis(unionFeatClass,outDBF,[pu_field,calc_field_name],both_sides="NO_BOTH_SIDES",out_linear_units="METERS")
-    else:
-        arcpy.PolygonNeighbors_analysis(unionFeatClass,outDBF,[pu_field],both_sides="NO_BOTH_SIDES",out_linear_units="METERS")
+    arcpy.PolygonNeighbors_analysis(unionFeatClass,outDBF,[pu_field],both_sides="NO_BOTH_SIDES",out_linear_units="METERS")
     boundList = []
     x = 0
     for row in arcpy.da.SearchCursor(outDBF,'*'):
@@ -316,40 +323,14 @@ def boundary(boundary_layer):
         id2 = int(row[2])
         if id1 == -1:
             id1 = id2
-        if boundary_method in ["Weighted","Field"]:
-            nodes = row[6]
-            sideLen = row[5]
-        else:
-            nodes = row[4]
-            sideLen = row[3]
-        # note: node > 0 means a touching corner, not a touching side
+        nodes = row[4]
+        sideLen = row[3]
+        # note: node > 0 means a touching corner, not a touching side.
+        # JC: therefore, we are looking for relationships where there is a
+        # shared length and not a touching corner to the boundary. All shared
+        # boundaries will have 0 node corners touching.
         if nodes == 0 and sideLen > 0:
-            if boundary_method in ["Weighted","Field"]:
-                if id1 == id2 and int(row[1]) == -1:
-                    # note this is for the perimeter where the buffered calc field value is zero 
-                    # and so the difference method will fail
-                    fValue = row[4]
-                else:
-                    if field_calc_method == 'Mean':
-                        fValue = (row[3]+row[4])/2.0
-                    elif field_calc_method == 'Maximum':
-                        if row[3] > row[4]:
-                            fValue = row[3]
-                        else:
-                            fValue = row[4]
-                    else:
-                        if row[3] < row[4]:
-                            fValue = row[3]
-                        else:
-                            fValue = row[4]
-            if boundary_method == 'Measured':
-                bValue = sideLen
-            elif boundary_method == 'Weighted':
-                bValue = sideLen * fValue
-            elif boundary_method == 'Field':
-                bValue = fValue
-            elif boundary_method == 'Single Value':
-                bValue = boundary_value
+            bValue = sideLen * weighting
             # deal with boundary units special cases
             if id1 == id2:
                 if boundary_treatment in ["Full Value","Half Value"]:
@@ -361,7 +342,7 @@ def boundary(boundary_layer):
     boundList.sort()
 
     # convert to bound.dat file
-    oFileName = os.path.join(marxan_input_folder,'bound.dat')
+    oFileName = os.path.join(scenario,'input/bound.dat')
     oFile = open(oFileName,'w')
     oFile.write('id1\tid2\tboundary\n')
     for rec in boundList:
@@ -369,12 +350,31 @@ def boundary(boundary_layer):
     oFile.close()
     arcpy.Delete_management(outDBF)
     arcpy.Delete_management(unionFeatClass)
-
-
     # delete temp gdb
-    # FUCK ME, BE CAREFUL
-
+    arcpy.Delete_management(temp_gdb)
     return
 
+
 if not 'bound' in to_not_include:
-    pass
+
+    boundary(
+        boundary_layer = puvsp_fc,
+        pu_field = 'uID',
+        boundary_treatment = 'Half Value',
+        weighting = 0.01 # to get edges of 10
+    )
+
+
+#####################################
+# Create zone contribution file (zonecontrib.dat)
+# NO LONGER USING THIS, BUT MAKE SOME NOTES FOR UNDERSTANDING
+# I misunderstood zone contributions. There explanation is a bit confusing. It 
+# is for the level that a pu can contribute to meeting a target. For instance, 
+# for an eco feature, if it is in a conservation zone then 100% of the area of a
+# pu can contribute towards the target. However, perhaps you'll also consider 
+# that some protection can be met in an industrial zone (e.g. since a fish may 
+# not be fished there, but the activity could indirectly affect it). In this 
+# case, perhaps only 50% of a pu can contribute towards meeting the target for 
+# that fish. Therefore, by not specifying zonecontrib.dat, I just say that all 
+# are treated equal, and since I don't target features in more than 1 zone then 
+# I don't need to worry about this.
