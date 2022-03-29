@@ -24,5 +24,6 @@ scripts/dst_02_prioritizr/.Rproj.user
 *.shx
 *.ini
 *.bat
+*.prj
 
-*MarxanWZones_v406/
+*Tutorial_Marxan_with_zones/
