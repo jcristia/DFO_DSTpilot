@@ -20,8 +20,8 @@ dirs = [dir for dir in dirs if 'scenario' in dir] # scenario needs to be in the 
 for dir in dirs:
 
     if arcpy.Exists(dir):
-        continue
-
+       continue
+        
     output_folder = os.path.join(root, output_dir, dir, 'output')
     best_sol = pd.read_csv(os.path.join(output_folder, 'output_best.csv'))
 
