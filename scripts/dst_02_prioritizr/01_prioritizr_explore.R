@@ -123,6 +123,8 @@ evaluate_solution <- function(p1, s1) {
 
 
 
+
+
 ##############################################################
 # solution 1:
 # 
@@ -652,6 +654,179 @@ s_cohon3 <- solve(p_cohon3, force=TRUE)
 saveRDS(s_cohon3, glue('{out_folder}.rds'))
 evaluate_solution(p_cohon3, s_cohon3)
 
+##################
+# try smaller boundary penalty
+out_folder <- 's10_boundary'
+out_dir <- file.path(out_path, out_folder)
+dir.create(out_dir)
+setwd(out_dir)
+total_cost <- sum(pus$COST) + 1000
+p <- problem(pus, z, cost_column=c('COST', 'COST', 'COST', 'COST')) %>%
+  add_min_shortfall_objective(total_cost) %>%
+  add_relative_targets(tz) %>%
+  add_manual_locked_constraints(locked_df) %>%
+  add_boundary_penalties(penalty=0.000001, data=pus_bd, zone=zb, edge_factor=c(0.5, 0.5, 0.5, 0.5)) %>%
+  add_binary_decisions() %>%
+  add_gurobi_solver(gap = 0, threads = parallel::detectCores(TRUE)-1, time_limit=21600)
+sink('log.txt')
+s <- solve(p, force=TRUE)
+sink()
+saveRDS(s, glue('{out_folder}.rds'))
+evaluate_solution(p, s)
+
+# This one looks good for now.
+
+
+
+##############################################################
+# solution 11:
+# 
+# Test reducing the targets and using min_set_objective and
+# see how different it is to min_shortfall
+# I'm adjusting based on the shortfalls in solution #10
+##############################################################
+out_folder <- 's11_minsetobj'
+out_dir <- file.path(out_path, out_folder)
+dir.create(out_dir)
+setwd(out_dir)
+
+# set the cost to zero for pus already covered by MPAs
+pus$COST[pus$lockedin == TRUE] <- 0
+
+# zone targets matrix
+zone_names = c('zone1', 'zone2', 'zone3', 'zone4')
+tz <- matrix(NA, nrow=length(features), ncol=4, dimnames=list(features,zone_names))
+for(feat in features){
+  t <- targets[targets$features==feat,'target_low']
+  z <- zoning[zoning$feature==feat, 'zone_20220315_4zones'][[1]]
+  tz[feat, z] <- t
+}
+tz <- replace_na(tz, 0.0) # features are only targeted in one zone
+
+# adjust targets
+tz2 <- tz
+tz2['hu_ot_dredgingsites',2] <- 0.0
+tz2['hu_tr_vesseltraffic_d',3] <- 0.28
+tz2['hu_co_fishing_dive_d',4] <- 0.49
+tz2['hu_ot_underwaterinfrastructure',3]<-0.62
+tz2['hu_rf_fishing_groundfish',4]<-0.63
+tz2['hu_tr_portsandterminals',2]<-0.64
+tz2['hu_rf_fishing_crab',4]<-0.64
+tz2['hu_ot_citypopulation_d',2]<-0.65
+tz2['hu_rf_fishing_prawnandshrimp',4]<-0.68
+tz2['hu_ot_floatingstructures',2]<-0.69
+tz2['hu_co_fishing_trap_d',4]<-0.69
+tz2['hu_co_fishing_gill_salmon_d',4]<-0.69
+tz2['hu_ot_loghandlingstorage',2]<-0.69
+tz2['hu_rf_fishing_anadromous',4]<-0.69
+tz2['eco_fish_salmon',1]<-0.39
+tz2['hu_co_fishing_seine_salmon_d',4]<-0.69
+tz2['eco_fish_sixgillshark',1]<-0.39
+
+
+# Create zones object
+z <- zones(
+  features, features, features, features,
+  zone_names=zone_names,
+  feature_names=features
+)
+
+# Get boundary length data for all pus
+pus_bd <- boundary_matrix(pus)
+
+# Re-scale boundary length data to match order of magnitude of costs to avoid
+# numerical issues and reduce run times.
+pus_bd@x <- rescale(pus_bd@x, to=c(10,30))
+
+# create zone matrix which favors clumping planning units that are
+# allocated to the same zone together - this is the default
+zb <- diag(4)
+
+p <- problem(pus, z, cost_column=c('COST', 'COST', 'COST', 'COST')) %>%
+  add_min_set_objective() %>%
+  add_relative_targets(tz2) %>%
+  add_manual_locked_constraints(locked_df) %>%
+  add_boundary_penalties(penalty=0.000001, data=pus_bd, zone=zb, edge_factor=c(0.5, 0.5, 0.5, 0.5)) %>%
+  add_binary_decisions() %>%
+  add_gurobi_solver(gap = 0.01, threads = parallel::detectCores(TRUE)-1, time_limit=3600)
+sink('log.txt', split=TRUE)
+s <- solve(p, force=TRUE)
+sink()
+saveRDS(s, glue('{out_folder}.rds'))
+evaluate_solution(p, s)
+
+#!!!!
+# So this is way different. min_shortfall was doing what I thought it was doing.
+# Basically, when I give it all that budget, it seems to use most of it up to 
+# exceed targets, so the overall solution is going to look quite different.
+# See Jeff’s Jan 25 answer here: https://github.com/prioritizr/prioritizr/issues/224
+# The thing on the shopping list and his point 2.
+# Basically, min_shortfall can allow me to see that targets that aren’t met, 
+# but it is going to spend all that extra budget  to exceed targets.
+
+#############
+
+
+#############
+# same thing but without boundary penalty. I will compare this to Marxan to see
+# if we get about the same thing
+out_folder <- 's12_minsetobj_nobound'
+out_dir <- file.path(out_path, out_folder)
+dir.create(out_dir)
+setwd(out_dir)
+
+# set the cost to zero for pus already covered by MPAs
+pus$COST[pus$lockedin == TRUE] <- 0
+
+# zone targets matrix
+zone_names = c('zone1', 'zone2', 'zone3', 'zone4')
+tz <- matrix(NA, nrow=length(features), ncol=4, dimnames=list(features,zone_names))
+for(feat in features){
+  t <- targets[targets$features==feat,'target_low']
+  z <- zoning[zoning$feature==feat, 'zone_20220315_4zones'][[1]]
+  tz[feat, z] <- t
+}
+tz <- replace_na(tz, 0.0) # features are only targeted in one zone
+
+# adjust targets manually
+tz2 <- tz
+tz2['hu_ot_dredgingsites',2] <- 0.0
+tz2['hu_tr_vesseltraffic_d',3] <- 0.28
+tz2['hu_co_fishing_dive_d',4] <- 0.49
+tz2['hu_ot_underwaterinfrastructure',3]<-0.62
+tz2['hu_rf_fishing_groundfish',4]<-0.62
+tz2['hu_tr_portsandterminals',2]<-0.64
+tz2['hu_rf_fishing_crab',4]<-0.64
+tz2['hu_ot_citypopulation_d',2]<-0.65
+tz2['hu_rf_fishing_prawnandshrimp',4]<-0.68
+tz2['hu_ot_floatingstructures',2]<-0.69
+# tz2['hu_co_fishing_trap_d',4]<-0.69
+# tz2['hu_co_fishing_gill_salmon_d',4]<-0.69
+# tz2['hu_ot_loghandlingstorage',2]<-0.69
+# tz2['hu_rf_fishing_anadromous',4]<-0.69
+# tz2['eco_fish_salmon',1]<-0.39
+# tz2['hu_co_fishing_seine_salmon_d',4]<-0.69
+# tz2['eco_fish_sixgillshark',1]<-0.39
+
+
+# Create zones object
+z <- zones(
+  features, features, features, features,
+  zone_names=zone_names,
+  feature_names=features
+)
+
+p <- problem(pus, z, cost_column=c('COST', 'COST', 'COST', 'COST')) %>%
+  add_min_set_objective() %>%
+  add_relative_targets(tz2) %>%
+  add_manual_locked_constraints(locked_df) %>%
+  add_binary_decisions() %>%
+  add_gurobi_solver(gap = 0, threads = parallel::detectCores(TRUE)-1, time_limit=3600)
+sink('log.txt', split=TRUE)
+s <- solve(p, force=TRUE)
+sink()
+saveRDS(s, glue('{out_folder}.rds'))
+evaluate_solution(p, s)
 
 
 
@@ -659,23 +834,22 @@ evaluate_solution(p_cohon3, s_cohon3)
 
 
 
+##############################################################
+# Miscelanous stuff
+# 
+##############################################################
+
+#### runtime
+#rt <- attr(s, 'runtime')
+#### if it reached optimality or if it reached the time limit I set:
+#st <- attr(s, 'status')
+#### There's no way to save the gap acheived, so you need to note this after a run.
 
 
-
-
-
-
-
-
-
-
-
-########################################
-# Calculate irreplaceability
+#### Calculate irreplaceability
 # This is so slow so only run it on
-# the final solution.
+# the final solution, if at all.
 
-########################################
 # gap_replace <- 95 # set super high for testing
 # out_folder <- 's03_zones2'
 # out_dir <- file.path(out_path, out_folder)
@@ -693,5 +867,13 @@ evaluate_solution(p_cohon3, s_cohon3)
 # s2 <- as_tibble(s2)
 # s2 <- select(s2, -'Shape')
 # write.csv(s2, 'irreplaceability.csv', row.names=FALSE)
+
+
+
+
+
+
+
+
 
 
