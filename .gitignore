@@ -11,6 +11,7 @@
 *.Rhistory
 *.Rproj
 scripts/dst_02_prioritizr/.Rproj.user
+scripts/dst_02_prioritizr/outputs
 *.rds
 *.pdf
 *.exe
@@ -25,5 +26,9 @@ scripts/dst_02_prioritizr/.Rproj.user
 *.ini
 *.bat
 *.prj
+*.svg
 
 *Tutorial_Marxan_with_zones/
+*output/
+*input/
+*scenario_*/
