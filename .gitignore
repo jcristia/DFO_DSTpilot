@@ -3,6 +3,7 @@
 # except these files/folders
 !.gitignore
 !scripts/
+!README.md
 
 # then exclude specific folder and file types
 
